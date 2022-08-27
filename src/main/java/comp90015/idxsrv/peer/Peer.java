@@ -56,7 +56,30 @@ public class Peer implements IPeer {
 	@Override
 	public void shareFileWithIdxServer(File file, InetAddress idxAddress, int idxPort, String idxSecret,
 			String shareSecret) {
-		tgui.logError("shareFileWithIdxServer unimplemented");
+		// try to establish connection and handshake.
+		ConnectServer connection = new ConnectServer(this.tgui);
+		if (!connection.MakeConnection(idxAddress, idxPort, idxSecret)) {
+			tgui.logError("Connection Failed!");
+			return;
+		}
+
+		// create and send request to share with server
+		try{
+			RandomAccessFile raFile = new RandomAccessFile(file, "r");
+			FileDescr fd = new FileDescr(raFile);
+			//send request
+			Message msgToSend = new ShareRequest(fd, file.getName(), shareSecret, idxPort);
+			connection.sendRequest(msgToSend);
+			// receive reply
+			Message msg_back = connection.getMsg();
+			tgui.logInfo(msg_back.toString());
+		}
+		catch (Exception e) {
+			//e.printStackTrace();
+			tgui.logError("shareFileWithIdxServer Failed!");
+			return;
+		}
+		tgui.logInfo("shareFileWithIdxServer Finished!");
 	}
 
 	@Override
@@ -79,7 +102,6 @@ public class Peer implements IPeer {
 			connection.sendRequest(msgToSend);
 			// Add file info to GUI table
 			Message search_back = connection.getMsg();
-			tgui.logInfo(search_back.getClass().getName());
 			if (search_back.getClass().getName() == SearchReply.class.getName()) {
 				SearchReply searchReply = (SearchReply) search_back;
 				tgui.logInfo("searchReply Received!");
