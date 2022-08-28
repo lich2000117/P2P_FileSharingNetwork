@@ -177,8 +177,39 @@ public class Peer implements IPeer {
 
 	@Override
 	public void downloadFromPeers(String relativePathname, SearchRecord searchRecord) {
-		tgui.logError("downloadFromPeers unimplemented");
+		// try to establish connection and handshake with index server.
+		ConnectServer connection = new ConnectServer(this.tgui);
+		if (!connection.MakeConnection(searchRecord.idxSrvAddress, searchRecord.idxSrvPort, searchRecord.idxSrvSecret)) {
+			tgui.logError("Connection Failed!");
+			return;
+		}
+
+		// Perform Look up to get a list of available resources
+		// create and send request to share with server
+		try {
+			//send request
+			Message msgToSend = new LookupRequest(relativePathname, searchRecord.fileDescr.getFileMd5());
+			connection.sendRequest(msgToSend);
+			// receive reply
+			Message msg_back = connection.getMsg();
+			// check if reply is a success flag to return false or true.
+			if (!checkReply(msg_back)){return;}
+			LookupReply lookupReply = (LookupReply) msg_back;
+			// get an array of available resources
+			IndexElement[] sources = lookupReply.hits;
+			tgui.logInfo("Get File Sources Success!");
+			return;
+		}
+		catch (Exception e) {
+			//e.printStackTrace();
+			tgui.logError("Get File Sources Failed!");
+			return;
+		}
 	}
+
+	/*
+	
+	 */
 
 	/*
 	check the reply from server, if it's error message, return false, print to console.
