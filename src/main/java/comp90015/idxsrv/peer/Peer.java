@@ -7,9 +7,11 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingDeque;
 
+import comp90015.idxsrv.filemgr.BlockUnavailableException;
 import comp90015.idxsrv.filemgr.FileDescr;
 import comp90015.idxsrv.filemgr.FileMgr;
 import comp90015.idxsrv.message.*;
@@ -22,13 +24,15 @@ import comp90015.idxsrv.textgui.ISharerGUI;
  * @author aaron
  *
  */
-public class Peer implements IPeer {
+public class Peer extends Thread implements IPeer {
 
 	private IOThread ioThread;
 
 	private LinkedBlockingDeque<Socket> incomingConnections;
 
 	private ISharerGUI tgui;
+
+	private HashMap<String, String> sharingFiles;
 
 	private String basedir;
 
@@ -41,6 +45,7 @@ public class Peer implements IPeer {
 		this.port=port;
 		this.timeout=socketTimeout;
 		this.basedir=new File(basedir).getCanonicalPath();
+		this.sharingFiles = new HashMap<>();
 		ioThread = new IOThread(port,incomingConnections,socketTimeout,tgui);
 		ioThread.start();
 	}
@@ -51,6 +56,138 @@ public class Peer implements IPeer {
 		ioThread.join();
 	}
 
+	@Override
+	public void run() {
+		tgui.logInfo("Client Uploading thread running.");
+		while(!isInterrupted()) {
+			try {
+				Socket socket = incomingConnections.take();
+				processRequest(socket);
+				socket.close();
+			} catch (InterruptedException e) {
+				tgui.logWarn("Client Upload interrupted.");
+				break;
+			} catch (IOException e) {
+				tgui.logWarn("Client Upload io exception on socket.");
+			}
+		}
+		tgui.logInfo("Client Upload waiting for IO thread to stop...");
+		ioThread.interrupt();
+		try {
+			ioThread.join();
+		} catch (InterruptedException e) {
+			tgui.logWarn("Interrupted while joining with IO thread.");
+		}
+		tgui.logInfo("Client Upload thread completed.");
+	}
+
+	/**
+	 * This method is essentially the "Session Layer" logic, where the session is
+	 * short since it consists of exactly one request on the socket, then the socket
+	 * is closed.
+	 * Note:
+	 * 		This method is specifically for downlaod requests sent from other peers, follow protocle:
+	 * 		1. receive requested filename and block info
+	 * 		2. receive sharer (our) secret.
+	 * 		3. check secret and send success.
+	 * 		4. send block data.
+	 * @param socket
+	 * @throws IOException
+	 */
+	private void processRequest(Socket socket) throws IOException {
+		String ip=socket.getInetAddress().getHostAddress();
+		int port=socket.getPort();
+		tgui.logInfo("Client Upload processing request on connection "+ip);
+		InputStream inputStream = socket.getInputStream();
+		OutputStream outputStream = socket.getOutputStream();
+		BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+		BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
+
+		/*
+		 * Follow the synchronous handshake protocol.
+		 */
+
+		// 1. write the welcome
+		writeMsg(bufferedWriter,new WelcomeMsg("welcome to peer sharer!"));
+
+		// 2. get a message with block info
+		Message msg;
+		try {
+			msg = readMsg(bufferedReader);
+		} catch (JsonSerializationException e1) {
+			writeMsg(bufferedWriter,new ErrorMsg("Invalid message"));
+			return;
+		}
+
+		// 2.1 block info
+		BlockRequest blockRequest;
+		if(msg.getClass().getName()==BlockRequest.class.getName()) {
+			blockRequest = (BlockRequest) msg;
+		}
+		else {writeMsg(bufferedWriter,new ErrorMsg("Invalid message")); return;}
+
+		// 2.2 check secret by getting another message
+		try {
+			msg = readMsg(bufferedReader);
+		} catch (JsonSerializationException e1) {
+			writeMsg(bufferedWriter,new ErrorMsg("Invalid message"));
+			return;
+		}
+		// 2.2 check if secret match shared file secret
+		if(msg.getClass().getName()==AuthenticateRequest.class.getName()) {
+			AuthenticateRequest ar = (AuthenticateRequest) msg;
+			if(!ar.secret.equals(sharingFiles.get(blockRequest.filename))) {
+				writeMsg(bufferedWriter,new AuthenticateReply(false));
+				return;
+			} else {
+				writeMsg(bufferedWriter,new AuthenticateReply(true));
+			}
+		} else {
+			writeMsg(bufferedWriter,new ErrorMsg("Expecting AuthenticateRequest"));
+			return;
+		}
+
+		/* 3.0
+		 * Now process our block request. This is a single-request-per-connection
+		 * protocol.
+		 */
+
+		processDownloadRequest(bufferedWriter, blockRequest,ip,port);
+
+		// Send Finish Signal
+		writeMsg(bufferedWriter,new ErrorMsg("Download Finished to last step on peer sharer."));
+		// close the streams
+		bufferedReader.close();
+		bufferedWriter.close();
+	}
+
+	/*
+	 * Methods to process each of the possible requests.
+	 */
+	private void processDownloadRequest(BufferedWriter bufferedWriter,BlockRequest msg, String ip, int port) throws IOException {
+		tgui.logError("Ready To Download!");
+
+		// *********** send a block reply here!!   *******************************
+		//writeMsg(bufferedWriter,new ErrorMsg("Download Finished to last step on peer sharer."));
+
+//		// check if requested block is the same as sharing block.
+//		if (!(fileMgr.getFileDescr().getBlockMd5(msg.blockIdx) == msg.fileMd5)) {
+//			writeMsg(bufferedWriter,new ErrorMsg("File Block Unmatched!"));
+//		}
+//		// else, access local block file and send blockreply
+//		if (fileMgr.isBlockAvailable(msg.blockIdx)) {
+//			try {
+//				byte[] data = fileMgr.readBlock(msg.blockIdx);
+//				writeMsg(bufferedWriter,new BlockReply(msg.filename, fileMgr.getFileDescr().getFileMd5(), msg.blockIdx, FileDescr.bytesToHex(data)));
+//			}
+//			catch (BlockUnavailableException e) {
+//				writeMsg(bufferedWriter,new ErrorMsg("Block is not available!"));
+//			}
+//		}
+	}
+
+
+
 	/*
 	 * Students are to implement the interface below.
 	 */
@@ -58,6 +195,9 @@ public class Peer implements IPeer {
 	@Override
 	public void shareFileWithIdxServer(File file, InetAddress idxAddress, int idxPort, String idxSecret,
 			String shareSecret) {
+		// Check if file in base dir
+		if (! file.getParent().equals(basedir)){tgui.logError("File Not in Base Directory!"); return;}
+
 		// try to establish connection and handshake.
 		ConnectServer connection = new ConnectServer(this.tgui);
 		if (!connection.MakeConnection(idxAddress, idxPort, idxSecret)) {
@@ -71,7 +211,7 @@ public class Peer implements IPeer {
 			String fileName = file.getName();
 			FileMgr fileMgr = new FileMgr(fileName);
 			//send request
-			Message msgToSend = new ShareRequest(fileMgr.getFileDescr(), fileName, shareSecret, idxPort);
+			Message msgToSend = new ShareRequest(fileMgr.getFileDescr(), fileName, shareSecret, this.port);
 			connection.sendRequest(msgToSend);
 			// receive reply
 			Message msg_back = connection.getMsg();
@@ -83,9 +223,14 @@ public class Peer implements IPeer {
 					idxPort, idxSecret, shareSecret);
 			tgui.addShareRecord(file.getName(), newRecord);
 			tgui.logInfo("shareFileWithIdxServer Finished!");
+			sharingFiles.put(file.getName(), shareSecret); // add to our hashmap dictionary
+		}
+		catch (FileNotFoundException e) {
+			tgui.logError("File out of Directory!");
+			return;
 		}
 		catch (Exception e) {
-			//e.printStackTrace();
+			tgui.logError(e.toString());
 			tgui.logError("shareFileWithIdxServer Failed!");
 			return;
 		}
@@ -128,7 +273,7 @@ public class Peer implements IPeer {
 
 				// create new searchrecord class and add to our gui table.
 				SearchRecord newSearchRecord =
-						new SearchRecord(ie.fileDescr, curSeedCounts, inetAddress, ie.port, idxSecret, ie.secret);
+						new SearchRecord(ie.fileDescr, curSeedCounts, inetAddress, idxPort, idxSecret, ie.secret);
 				tgui.addSearchHit(fileName, newSearchRecord);
 				tgui.logInfo("searchRecord Added!");
 			}
@@ -198,34 +343,86 @@ public class Peer implements IPeer {
 			// get an array of available resources
 			IndexElement[] sources = lookupReply.hits;
 			tgui.logInfo("Get File Sources Success!");
+			connection.shutdown();  // shutdown connection with Server
 
+
+			// hard code to use first resources.
+			IndexElement source = sources[0];
+			tgui.logInfo(source.toString());
+			tgui.logInfo(String.valueOf(source.port));
+
+
+			// try to establish connection and handshake with peer server.
+			Socket socket = new Socket(InetAddress.getByName(source.ip), source.port);
+			InputStream inputStream = socket.getInputStream();
+			OutputStream outputStream = socket.getOutputStream();
+			// initialise input and outputStream
+			BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+			BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
+			tgui.logError("Connection to Peer Succeed!!");
+
+
+
+
+			// Above works!
+
+
+
+
+
+
+//			// 1. send a block request with filename first.
+//			// 2. send another request with the sharer secret
+//			// 3. get msg from peer back indicate success or not.
 //
-//			// hard code to use first resources.
-//			IndexElement source = sources[0];
+//			// 2.1 Get a Welcome Message
+//			Message welcome_msg = readMsg(bufferedReader);
+//			tgui.logInfo(welcome_msg.toString());
+//			tgui.logError("Recei");
 //
-//			// open local maybe unifinished target file, with remote file info.
-//			FileMgr local_file = new FileMgr(relativePathname, source.fileDescr);
-//			int n_blocks = source.fileDescr.getNumBlocks();
+//			// 2. (HandShake 1): Send Block request first
+//			writeMsg(bufferedWriter, new BlockRequest(source.filename, source.fileDescr.getFileMd5(), 0));
+//			tgui.logError("haha");
+//			//3. (HandShake 2): Send Key authenticate to server
+//			writeMsg(bufferedWriter, new AuthenticateRequest(source.secret));
 //
-//			Set<Integer> blocksRequired;
-//			blocksRequired.clear();
-//			blocksDone.clear();
-//			for(int b=0;b<n_blocks;b++) {
-//				byte[] blockBytes = _readBlock(b);
-//				if(checkBlockHash(b,blockBytes)) {
-//					blocksDone.add(b);
-//				} else {
-//					blocksRequired.add(b);
+//			// 3. (HandShake 2): Check authenticate reply from server
+//			Message auth_back = readMsg(bufferedReader);
+//			if (auth_back.getClass().getName() == AuthenticateReply.class.getName()) {
+//				AuthenticateReply reply = (AuthenticateReply) auth_back;
+//				if (reply.success != true) {
+//					tgui.logError("Sharing Peer Authentication Failed! Check your secret with that file record.");
+//					return;
 //				}
 //			}
 //
-//			// iterate blocks
-//			for (int i=0; i<n_blocks; i++){
-//				remote_file.
-//			}
+//			//********************* Receive Block Reply here ******************
+//			//Message block_reply = readMsg(bufferedReader);
+//
+//			//******************* Receive finish message *****
+//			Message finish = readMsg(bufferedReader);
+//			tgui.logError("Request Peer received download finish signal! " + finish.toString());
 
-
-
+		//			// open local maybe unifinished target file, with remote file info.
+		//			FileMgr local_file = new FileMgr(relativePathname, source.fileDescr);
+		//			int n_blocks = source.fileDescr.getNumBlocks();
+		//
+		//			Set<Integer> blocksRequired;
+		//			blocksRequired.clear();
+		//			blocksDone.clear();
+		//			for(int b=0;b<n_blocks;b++) {
+		//				byte[] blockBytes = _readBlock(b);
+		//				if(checkBlockHash(b,blockBytes)) {
+		//					blocksDone.add(b);
+		//				} else {
+		//					blocksRequired.add(b);
+		//				}
+		//			}
+		//
+		//			// iterate blocks
+		//			for (int i=0; i<n_blocks; i++){
+		//				remote_file.
+		//			}
 
 
 			return;

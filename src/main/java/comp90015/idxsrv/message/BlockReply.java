@@ -1,7 +1,7 @@
 package comp90015.idxsrv.message;
 
 @JsonSerializable
-public class BlockReply {
+public class BlockReply extends Message  {
     @JsonElement
     public String filename;
     @JsonElement

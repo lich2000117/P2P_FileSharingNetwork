@@ -28,10 +28,10 @@ public class ConnectServer {
      * 2.1. get welcome message from server;
      * 3. receive confirm reply from server after authenticate.
      */
-    public boolean MakeConnection(InetAddress idxAddress, int idxPort, String idxSecret){
+    public boolean MakeConnection(InetAddress Address, int Port, String Secret){
         try {
             // 1. (Initialise) Create Socket
-            this.socket = new Socket(idxAddress, idxPort);
+            this.socket = new Socket(Address, Port);
             this.inputStream = this.socket.getInputStream();
             this.outputStream = this.socket.getOutputStream();
             // initialise input and outputStream
@@ -40,7 +40,7 @@ public class ConnectServer {
             this.tgui.logInfo("Connection to Server Established!");
 
             // 2. (HandShake 1): Write an authenticate message to establish authenticated message
-            writeMsg(bufferedWriter, new AuthenticateRequest(idxSecret));
+            writeMsg(bufferedWriter, new AuthenticateRequest(Secret));
 
             // 2.1 Get a Welcome Message
             Message welcome_msg = readMsg(bufferedReader);
