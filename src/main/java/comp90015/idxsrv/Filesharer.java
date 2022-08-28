@@ -34,7 +34,7 @@ public class Filesharer {
 	private static void help() {
 		final PrintWriter writer = new PrintWriter(System.out);
 		HelpFormatter formatter = new HelpFormatter();
-	    formatter.printHelp("", options);
+	    formatter.printHelp("[-h help] [-p <LOCALPORT>] [-sp <IDXSRVPORT>] [-a <LOCALHOSTIP>] [-sa <IDXSRVHOSTIP>] [-d <SHAREDIR>] [-w <WELCOME>] [-s <SHARERSECRET>] [-ss <SERVERSECRET>] [-t <TIMEOUTMS>]", options);
 	    writer.flush();
 	    System.exit(0);
 	}

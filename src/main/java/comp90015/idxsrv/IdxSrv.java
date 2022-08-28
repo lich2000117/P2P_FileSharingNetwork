@@ -4,9 +4,6 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 
 import org.apache.commons.cli.*;
 
@@ -25,7 +22,7 @@ public class IdxSrv
 	private static void help() {
 		final PrintWriter writer = new PrintWriter(System.out);
 		HelpFormatter formatter = new HelpFormatter();
-	    formatter.printHelp("", options);
+	    formatter.printHelp("[-h] [-p <PORT>] [-a <HOSTIP>] [-w <WELCOME>] [-s <SECRET>] [-t <TIMEOUTMS>]", options);
 	    writer.flush();
 	    System.exit(0);
 	}
@@ -47,9 +44,6 @@ public class IdxSrv
     	Option addressOption = new Option("a","address",true,"advertised network address; default ["+address.getHostName()+"]");
     	addressOption.setRequired(false);
     	options.addOption(addressOption);
-    	Option dirOption =  new Option("d","dir",true,"directory to share; default ["+dir+"]");
-    	dirOption.setRequired(false);
-    	options.addOption(dirOption);
     	Option welcomeOption = new Option("w","welcome",true,"the welcome message; defauft ["+welcome+"]");
     	welcomeOption.setRequired(false);
     	options.addOption(welcomeOption);
@@ -86,15 +80,6 @@ public class IdxSrv
 	    	}
 	    	if(cmd.hasOption("w")) {
 	    		welcome=cmd.getOptionValue("w");
-	    	}
-	    	if(cmd.hasOption("d")) {
-	    		String udir=cmd.getOptionValue("d");
-	    		Path path = Paths.get(udir);
-	    		if(!Files.exists(path)) {
-	    			stg.logWarn("The supplied directory does not exist ["+udir+"]");
-	    		} else {
-	    			dir=udir;
-	    		}
 	    	}
 	    	if(cmd.hasOption("s")) {
 	    		secret=cmd.getOptionValue("s");
