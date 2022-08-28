@@ -7,6 +7,7 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Set;
 import java.util.concurrent.LinkedBlockingDeque;
 
 import comp90015.idxsrv.filemgr.FileDescr;
@@ -67,17 +68,16 @@ public class Peer implements IPeer {
 		// create and send request to share with server
 		try{
 			RandomAccessFile raFile = new RandomAccessFile(file, "r");
-			FileDescr fd = new FileDescr(raFile);
 			String fileName = file.getName();
+			FileMgr fileMgr = new FileMgr(fileName);
 			//send request
-			Message msgToSend = new ShareRequest(fd, fileName, shareSecret, idxPort);
+			Message msgToSend = new ShareRequest(fileMgr.getFileDescr(), fileName, shareSecret, idxPort);
 			connection.sendRequest(msgToSend);
 			// receive reply
 			Message msg_back = connection.getMsg();
 			// check if it's error message
 			if (!checkReply(msg_back)){return;}
 			// if server accept, add to GUI
-			FileMgr fileMgr = new FileMgr(fileName, fd);
 			ShareReply reply = (ShareReply) msg_back;
 			ShareRecord newRecord = new ShareRecord(fileMgr, reply.numSharers," ", idxAddress,
 					idxPort, idxSecret, shareSecret);
@@ -198,6 +198,36 @@ public class Peer implements IPeer {
 			// get an array of available resources
 			IndexElement[] sources = lookupReply.hits;
 			tgui.logInfo("Get File Sources Success!");
+
+//
+//			// hard code to use first resources.
+//			IndexElement source = sources[0];
+//
+//			// open local maybe unifinished target file, with remote file info.
+//			FileMgr local_file = new FileMgr(relativePathname, source.fileDescr);
+//			int n_blocks = source.fileDescr.getNumBlocks();
+//
+//			Set<Integer> blocksRequired;
+//			blocksRequired.clear();
+//			blocksDone.clear();
+//			for(int b=0;b<n_blocks;b++) {
+//				byte[] blockBytes = _readBlock(b);
+//				if(checkBlockHash(b,blockBytes)) {
+//					blocksDone.add(b);
+//				} else {
+//					blocksRequired.add(b);
+//				}
+//			}
+//
+//			// iterate blocks
+//			for (int i=0; i<n_blocks; i++){
+//				remote_file.
+//			}
+
+
+
+
+
 			return;
 		}
 		catch (Exception e) {
@@ -208,7 +238,7 @@ public class Peer implements IPeer {
 	}
 
 	/*
-	
+
 	 */
 
 	/*
