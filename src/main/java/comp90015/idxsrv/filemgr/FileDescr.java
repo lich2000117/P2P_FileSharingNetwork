@@ -134,8 +134,7 @@ public class FileDescr {
 	 * @return the block's offset
 	 */
 	public int getBlockOffset(int blockIdx) {
-		int offset = blockIdx*blockLength;
-		if(offset<numBlocks) return offset;
+		if(blockIdx<numBlocks) return blockIdx*blockLength;
 		throw new InvalidBlockIndexException();
 	}
 	
