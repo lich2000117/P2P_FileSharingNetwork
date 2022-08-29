@@ -9,6 +9,8 @@ public class BlockRequest extends Message  {
     @JsonElement
     public Integer blockIdx;
 
+    public BlockRequest(){}
+
     public BlockRequest(String filename, String fileMd5, Integer blockIdx) {
         this.filename = filename;
         this.fileMd5 = fileMd5;

@@ -1,4 +1,11 @@
-Process of Connection:
+## TO DO
+1. get peer to peer connection working.
+
+
+
+
+
+### Process of Connection:
 
 Peer: 
 1. Create Socket with Server

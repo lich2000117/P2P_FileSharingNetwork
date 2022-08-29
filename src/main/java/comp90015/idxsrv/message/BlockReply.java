@@ -11,6 +11,8 @@ public class BlockReply extends Message  {
     @JsonElement
     public String bytes;
 
+    public BlockReply(){}
+
     public BlockReply(String filename, String fileMd5, Integer blockIdx, String bytes) {
         this.filename = filename;
         this.fileMd5 = fileMd5;
