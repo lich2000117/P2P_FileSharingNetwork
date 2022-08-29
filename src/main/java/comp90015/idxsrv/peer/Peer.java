@@ -134,7 +134,7 @@ public class Peer implements IPeer {
 	public void shareFileWithIdxServer(File file, InetAddress idxAddress, int idxPort, String idxSecret,
 			String shareSecret) {
 		// Check if file in base dir
-		if (! file.getParent().equals(basedir)){tgui.logError("File Not in Base Directory!"); return;}
+		if (! file.getParent().contains(basedir)){tgui.logError("File Not in Base Directory!"); return;}
 
 		// try to establish connection and handshake.
 		ConnectServer connection = new ConnectServer(this.tgui);
@@ -146,10 +146,11 @@ public class Peer implements IPeer {
 		// create and send request to share with server
 		try{
 			RandomAccessFile raFile = new RandomAccessFile(file, "r");
-			String fileName = file.getName();
-			FileMgr fileMgr = new FileMgr(fileName);
+			String filePath = file.getPath();
+			String relativePathName = new File(basedir).toURI().relativize(new File(filePath).toURI()).getPath();
+			FileMgr fileMgr = new FileMgr(filePath);
 			//send request
-			Message msgToSend = new ShareRequest(fileMgr.getFileDescr(), fileName, shareSecret, this.port);
+			Message msgToSend = new ShareRequest(fileMgr.getFileDescr(), relativePathName, shareSecret, this.port);
 			connection.sendRequest(msgToSend);
 			// receive reply
 			Message msg_back = connection.getMsg();
@@ -159,7 +160,7 @@ public class Peer implements IPeer {
 			ShareReply reply = (ShareReply) msg_back;
 			ShareRecord newRecord = new ShareRecord(fileMgr, reply.numSharers," ", idxAddress,
 					idxPort, idxSecret, shareSecret);
-			tgui.addShareRecord(file.getName(), newRecord);
+			tgui.addShareRecord(relativePathName, newRecord);
 			tgui.logInfo("shareFileWithIdxServer Finished!");
 			sharingFiles.put(newRecord.fileMgr.getFileDescr().getFileMd5(), newRecord); // add to our hashmap dictionary
 			//this.run();  // start listening thread
@@ -294,8 +295,15 @@ public class Peer implements IPeer {
 
 			/* Load File */
 			// A. Load Local File Create/Open Local unfinished file with FileMgr
-			FileMgr localTempFile = new FileMgr("TEMP_" + relativePathname, searchRecord.fileDescr);
+			tgui.logInfo("BeforeLOad!");
+			// create DOWNLOAD directory for download
+			(new File("DOWNLOAD/" + new File(relativePathname).getParent())).mkdirs();
+
+			String downloadPath = new File("DOWNLOAD/", relativePathname).getPath();
+			tgui.logError(downloadPath);
+			FileMgr localTempFile = new FileMgr(downloadPath, searchRecord.fileDescr);
 			//FileMgr localTempFile = new FileMgr(relativePathname, searchRecord.fileDescr);
+			tgui.logInfo("AfterLoad!");
 			int blockIdx_Need = 0;
 
 			/**Get Blocks need to be done here**/

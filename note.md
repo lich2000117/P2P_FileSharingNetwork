@@ -1,9 +1,9 @@
 ## TO DO
 1. get peer to peer connection working. (Done)
-2. can only transfer file in base dir. cannot work in subdir.
+2. can only transfer file in base dir. cannot work in subdir. (Done, now it creates and goes to `DOWNLOAD/` folder)
 3. Shutdown InputString and OutputString after connection
 4. Shutdown each socket connection
-5. Now, it only works on first block, need to iterate through every block (get needed index first).
+5. Now, it only works on small files (16MB), only transfer first block, need to iterate through every block (get needed index first, then iterate to get all).
 6. How to upload/download **multiple** blocks at the same time? only one port, multiple connection to other peers?
    1. It can now download / upload at the same time with PeerIOThread.
 
