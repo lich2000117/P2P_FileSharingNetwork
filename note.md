@@ -1,6 +1,18 @@
 ## TO DO
-1. get peer to peer connection working.
+1. get peer to peer connection working. (Done)
+2. can only transfer file in base dir. cannot work in subdir.
+3. Shutdown InputString and OutputString after connection
+4. Shutdown each socket connection
+5. Now, it only works on first block, need to iterate through every block (get needed index first).
+6. How to upload/download **multiple** blocks at the same time? only one port, multiple connection to other peers?
+   1. It can now download / upload at the same time with PeerIOThread.
 
+ShareRecord stores file Descriptor, file content and sharer secret.
+Therefore, use HashMap<filename, ShareRecord> to store sharer's history of shared files.
+
+Peer asking to download: send MD5 of that file.
+
+Peer upload node: check HashMap (MD5) == sharesecret
 
 
 

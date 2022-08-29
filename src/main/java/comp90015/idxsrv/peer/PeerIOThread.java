@@ -7,6 +7,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.concurrent.LinkedBlockingDeque;
 
+import comp90015.idxsrv.filemgr.BlockUnavailableException;
+import comp90015.idxsrv.filemgr.FileDescr;
+import comp90015.idxsrv.filemgr.FileMgr;
 import comp90015.idxsrv.message.*;
 import comp90015.idxsrv.textgui.ISharerGUI;
 import comp90015.idxsrv.textgui.ITerminalLogger;
@@ -24,10 +27,11 @@ public class PeerIOThread extends Thread {
     private ISharerGUI tgui;
     private int timeout;
 
-    private HashMap<String, String> sharingFiles;
+    private HashMap<String, ShareRecord> sharingFiles;
     /**
-     * Create an IOThread, which attempts to the bind to the provided
+     * Create a Peer IOThread, which attempts to the bind to the provided
      * port with a server socket. The thread must be explicitly started.
+     * Also it process the incoming request in socket
      * @param port the port for the server socket
      * @param incomingConnections the blocking queue to put incoming connections
      * @param timeout the timeout value to be set on incoming connections
@@ -38,7 +42,7 @@ public class PeerIOThread extends Thread {
                     LinkedBlockingDeque<Socket> incomingConnections,
                     int timeout,
                     ISharerGUI logger,
-                    HashMap<String, String> sharingFiles) throws IOException {
+                    HashMap<String, ShareRecord> sharingFiles) throws IOException {
         this.timeout = timeout;
         this.tgui = logger;
         this.incomingConnections=incomingConnections;
@@ -68,7 +72,8 @@ public class PeerIOThread extends Thread {
                         tgui.logWarn("Peer IO thread dropped connection - incoming connection queue is full.");
                     }
                     else {
-                        processRequest(socket);
+                        // process upcoming socket.
+                        processDownloadRequest(socket);
                         socket.close();
                     }
                 } catch (IOException e) {
@@ -87,7 +92,7 @@ public class PeerIOThread extends Thread {
 
 
 
-    private void processRequest(Socket socket) throws IOException {
+    private void processDownloadRequest(Socket socket) throws IOException {
         String ip=socket.getInetAddress().getHostAddress();
         int port=socket.getPort();
         tgui.logError("Client Upload processing request on connection "+ip);
@@ -128,7 +133,10 @@ public class PeerIOThread extends Thread {
 		}
 		if(msg.getClass().getName()==AuthenticateRequest.class.getName()) {
 			AuthenticateRequest ar = (AuthenticateRequest) msg;
-			if(!ar.secret.equals(sharingFiles.get(blockRequest.filename))) {
+
+            tgui.logError("True" + sharingFiles.get(blockRequest.fileMd5));
+
+			if(!ar.secret.equals(sharingFiles.get(blockRequest.fileMd5).sharerSecret)) {
 				writeMsg(bufferedWriter,new AuthenticateReply(false));
 				return;
 			} else {
@@ -144,13 +152,47 @@ public class PeerIOThread extends Thread {
 //		 * protocol.
 //		 */
 //
-		//processDownloadRequest(bufferedWriter, blockRequest,ip,port);
+		processDownloadRequest(bufferedWriter, blockRequest,ip,port);
 //
-//		// Send Finish Signal
-		writeMsg(bufferedWriter,new ErrorMsg("Download Finished to last step on peer sharer."));
-//		// close the streams
-		bufferedReader.close();
-		bufferedWriter.close();
+//		//******************* finish Goodbye message *************
+        try {
+            // Send Finish GoodBye Signal
+            writeMsg(bufferedWriter,new Goodbye());
+            // receive GoodBye Signal
+            Goodbye gb = (Goodbye) readMsg(bufferedReader);
+            // close the streams
+            bufferedReader.close();
+            bufferedWriter.close();
+        } catch (Exception e1) {
+            writeMsg(bufferedWriter, new ErrorMsg("Fail to exchange good bye signal"));
+        }
+
+    }
+
+    /*
+     * Methods to process each of the possible requests.
+     */
+    private void processDownloadRequest(BufferedWriter bufferedWriter,BlockRequest msg, String ip, int port) throws IOException {
+        tgui.logError("Ready To Download!");
+        FileMgr fileMgr = sharingFiles.get(msg.fileMd5).fileMgr; // use stored sharing file.
+
+		// check if sharing file the same as requested file using MD5.
+		if (!(fileMgr.getFileDescr().getBlockMd5(msg.blockIdx).equals(msg.fileMd5))) {
+			writeMsg(bufferedWriter,new ErrorMsg("**File Block Unmatched! It should be the same.**"));
+            return;
+		}
+
+		// access local block file and send blockReply
+		if (fileMgr.isBlockAvailable(msg.blockIdx)) {
+			try {
+				byte[] data = fileMgr.readBlock(msg.blockIdx);
+				writeMsg(bufferedWriter,new BlockReply(msg.filename, fileMgr.getFileDescr().getFileMd5(), msg.blockIdx, new String(data)));
+			}
+			catch (BlockUnavailableException e) {
+				writeMsg(bufferedWriter,new ErrorMsg("Block is not available!"));
+			}
+		}
+        tgui.logError("Server Send File successfully!");
     }
 
 
