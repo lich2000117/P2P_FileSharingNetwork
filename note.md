@@ -1,4 +1,12 @@
 ## TO DO
+1. use `getLocalTempFile` to load/create a downloading local file,
+   - then, get needed blocks into an array `neededBlocks`,
+   - then, for every available peer, try download all `neededBlocks`, catch exception: 1. Block not available 2. Connection lost
+   - if Block unavailable exception, put current index back, try next block
+   - if iterate all block, still need some, skip to next peer (with updated `neededBlocks`).
+   - if Connection exception is catched, skip to next peer (with current index)
+
+## Big To DO
 1. get peer to peer connection working. (Done)
 2. can only transfer file in base dir. cannot work in subdir. (now it creates and goes to `DOWNLOAD/` folder) (Done)
 3. Shutdown InputString and OutputString after connection

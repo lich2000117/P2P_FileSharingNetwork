@@ -2,21 +2,15 @@ package comp90015.idxsrv.peer;
 
 
 import java.io.*;
-import java.net.ConnectException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.ArrayList;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
-import java.util.Set;
 import java.util.concurrent.LinkedBlockingDeque;
 
-import comp90015.idxsrv.filemgr.BlockUnavailableException;
-import comp90015.idxsrv.filemgr.FileDescr;
 import comp90015.idxsrv.filemgr.FileMgr;
 import comp90015.idxsrv.message.*;
-import comp90015.idxsrv.server.IOThread;
 import comp90015.idxsrv.server.IndexElement;
 import comp90015.idxsrv.textgui.ISharerGUI;
 
@@ -271,38 +265,21 @@ public class Peer implements IPeer {
 		// Perform Look up to get a list of available resources
 		// create and send request to share with server
 		try {
-			//send request to get a file with same name and same MD5 code as file described in index server.
-			Message msgToSend = new LookupRequest(relativePathname, searchRecord.fileDescr.getFileMd5());
-			connection.sendRequest(msgToSend);
-			// receive reply
-			Message msg_back = connection.getMsg();
-			// check if reply is a success flag to return false or true.
-			if (!checkReply(msg_back)){return;}
-			LookupReply lookupReply = (LookupReply) msg_back;
-			// get an array of available resources
-			IndexElement[] sources = lookupReply.hits;
-			tgui.logInfo("Get File Sources Success!");
-			connection.shutdown();  // shutdown connection with Server
+			//
+			IndexElement[] sources = getSourcesFromIdx(relativePathname, searchRecord, connection);
+			if (sources == null) {tgui.logError("No Available Sources"); return;}
 
-
-			/* Choose Online Resources */
-			// hard code to use first resources.
+			//Hard code to get first source
 			IndexElement source = sources[0];
-			tgui.logInfo(source.ip);
-			tgui.logInfo(String.valueOf(source.port));
 
 
 			/* Load File */
 			// A. Load Local File Create/Open Local unfinished file with FileMgr
-			tgui.logInfo("BeforeLOad!");
-			// create DOWNLOAD directory for download
-			(new File("DOWNLOAD/" + new File(relativePathname).getParent())).mkdirs();
+			FileMgr localTempFile = getLocalTempFile(relativePathname, searchRecord);
 
-			String downloadPath = new File("DOWNLOAD/", relativePathname).getPath();
-			tgui.logError(downloadPath);
-			FileMgr localTempFile = new FileMgr(downloadPath, searchRecord.fileDescr);
-			//FileMgr localTempFile = new FileMgr(relativePathname, searchRecord.fileDescr);
-			tgui.logInfo("AfterLoad!");
+			int N = localTempFile.getFileDescr().getBlockLength(); //total number of blocks of the file
+			
+
 			int blockIdx_Need = 0;
 
 			/**Get Blocks need to be done here**/
@@ -310,7 +287,7 @@ public class Peer implements IPeer {
 			if (localTempFile.isBlockAvailable(blockIdx_Need)) {
 				byte[] localBlockData = localTempFile.readBlock(blockIdx_Need);
 				if (localTempFile.checkBlockHash(blockIdx_Need, localBlockData)) {
-					tgui.logInfo("Local Block is already done, Skip Download");
+					tgui.logInfo("Local Block is already done, Skip This Block.");
 					return;
 				}
 			}
@@ -424,6 +401,52 @@ public class Peer implements IPeer {
 			tgui.logError("Get File Sources Failed!");
 			return;
 		}
+	}
+
+	/**
+	 * create or load a local temporary file from disk
+	 * @param relativePathname
+	 * @param searchRecord
+	 * @return
+	 * @throws IOException
+	 * @throws NoSuchAlgorithmException
+	 */
+	private FileMgr getLocalTempFile(String relativePathname, SearchRecord searchRecord) throws IOException, NoSuchAlgorithmException {
+		tgui.logInfo("BeforeLOad!");
+		// create DOWNLOAD directory for download
+		(new File("DOWNLOAD/" + new File(relativePathname).getParent())).mkdirs();
+
+		String downloadPath = new File("DOWNLOAD/", relativePathname).getPath();
+		tgui.logError(downloadPath);
+		FileMgr localTempFile = new FileMgr(downloadPath, searchRecord.fileDescr);
+		return localTempFile;
+	}
+
+	/**
+	 * Return a list of available Peer sources, IndexElement[]
+	 * @param relativePathname
+	 * @param searchRecord
+	 * @param connection
+	 * @return
+	 * @throws IOException
+	 * @throws JsonSerializationException
+	 */
+	private IndexElement[] getSourcesFromIdx(String relativePathname, SearchRecord searchRecord, ConnectServer connection) throws IOException, JsonSerializationException {
+		//send request to get a file with same name and same MD5 code as file described in index server.
+		Message msgToSend = new LookupRequest(relativePathname, searchRecord.fileDescr.getFileMd5());
+		connection.sendRequest(msgToSend);
+		// receive reply
+		Message msg_back = connection.getMsg();
+		// check if reply is a success flag to return false or true.
+		if (!checkReply(msg_back)){
+			return null;
+		}
+		LookupReply lookupReply = (LookupReply) msg_back;
+		// get an array of available resources
+		IndexElement[] sources = lookupReply.hits;
+		tgui.logInfo("Get File Sources Success!");
+		connection.shutdown();  // shutdown connection with Server
+		return sources;
 	}
 
 	/*
