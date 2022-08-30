@@ -1,6 +1,6 @@
 ## TO DO
 1. get peer to peer connection working. (Done)
-2. can only transfer file in base dir. cannot work in subdir. (Done, now it creates and goes to `DOWNLOAD/` folder)
+2. can only transfer file in base dir. cannot work in subdir. (now it creates and goes to `DOWNLOAD/` folder) (Done)
 3. Shutdown InputString and OutputString after connection
 4. Shutdown each socket connection
 5. Now, it only works on small files (16MB), only transfer first block, need to iterate through every block (get needed index first, then iterate to get all).
@@ -19,6 +19,9 @@ Peer upload node: check HashMap (MD5) == sharesecret
 
 ### Process of Connection:
 
+#### VirtualBox Multiple VMs network set up:
+https://www.youtube.com/watch?v=vReAkOq-59I
+
 Peer: 
 1. Create Socket with Server
 2. Establish communication channel (input and output stream)
@@ -33,8 +36,10 @@ Server:
 5. keep listening, go back to step 1.
 
 
-### Code:
+### Script:
 
+- `copyToSFs.sh` : copy current project to replace all share folders project file (distributed node for testing use different share folders.)
+- `cleanDownload.sh` : remove DOWNLOAD folder from download.
 - `runServer.sh` : use `./runServer.sh` to run this script, clear maven package and reintall maven dependencies and 
 - recompile code to run server program.
 - `runClient.sh` : use `./runClient.sh` to run this script, clear maven package and reintall maven dependencies and 

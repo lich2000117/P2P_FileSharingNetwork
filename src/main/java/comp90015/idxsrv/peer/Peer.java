@@ -209,11 +209,10 @@ public class Peer implements IPeer {
 				IndexElement ie = hits[i];
 				int curSeedCounts = seedCounts[i];
 				String fileName = ie.filename;
-				InetAddress inetAddress = InetAddress.getByName(ie.ip);
 
 				// create new searchrecord class and add to our gui table.
 				SearchRecord newSearchRecord =
-						new SearchRecord(ie.fileDescr, curSeedCounts, inetAddress, idxPort, idxSecret, ie.secret);
+						new SearchRecord(ie.fileDescr, curSeedCounts, idxAddress, idxPort, idxSecret, ie.secret);
 				tgui.addSearchHit(fileName, newSearchRecord);
 				tgui.logInfo("searchRecord Added!");
 			}
@@ -240,7 +239,7 @@ public class Peer implements IPeer {
 		try {
 			//send request
 			Message msgToSend = new DropShareRequest(relativePathname, shareRecord.fileMgr.getFileDescr().getFileMd5(),
-					shareRecord.sharerSecret, shareRecord.idxSrvPort);
+					shareRecord.sharerSecret, this.port);
 			connection.sendRequest(msgToSend);
 			// receive reply
 			Message msg_back = connection.getMsg();
