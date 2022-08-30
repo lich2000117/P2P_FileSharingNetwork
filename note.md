@@ -5,6 +5,11 @@
    - if Block unavailable exception, put current index back, try next block
    - if iterate all block, still need some, skip to next peer (with updated `neededBlocks`).
    - if Connection exception is catched, skip to next peer (with current index)
+2. Memory Issue, after sharing/downloading big files, those files are still occupied
+3. Concurrent Sharing/Downloading (Done)
+
+## Issues
+1. Create FileMgr(filepath) not working for large file (>16MB)
 
 ## Big To DO
 1. get peer to peer connection working. (Done)
@@ -14,6 +19,7 @@
 5. Now, it only works on small files (16MB), only transfer first block, need to iterate through every block (get needed index first, then iterate to get all).
 6. How to upload/download **multiple** blocks at the same time? only one port, multiple connection to other peers?
    1. It can now download / upload at the same time with PeerIOThread.
+7. Base64 binary file transmission. (Done)
 
 ShareRecord stores file Descriptor, file content and sharer secret.
 Therefore, use HashMap<filename, ShareRecord> to store sharer's history of shared files.

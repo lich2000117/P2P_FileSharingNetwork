@@ -3,7 +3,9 @@ package comp90015.idxsrv.peer;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.concurrent.LinkedBlockingDeque;
 
@@ -12,7 +14,6 @@ import comp90015.idxsrv.filemgr.FileDescr;
 import comp90015.idxsrv.filemgr.FileMgr;
 import comp90015.idxsrv.message.*;
 import comp90015.idxsrv.textgui.ISharerGUI;
-import comp90015.idxsrv.textgui.ITerminalLogger;
 
 /**
  * A basic IOThread class that accepts connections and puts them
@@ -73,7 +74,7 @@ public class PeerIOThread extends Thread {
                     }
                     else {
                         // process upcoming socket.
-                        processDownloadRequest(socket);
+                        SendRequestedBlocks(socket);
                         socket.close();
                     }
                 } catch (IOException e) {
@@ -92,10 +93,10 @@ public class PeerIOThread extends Thread {
 
 
 
-    private void processDownloadRequest(Socket socket) throws IOException {
+    private void SendRequestedBlocks(Socket socket) throws IOException {
         String ip=socket.getInetAddress().getHostAddress();
         int port=socket.getPort();
-        tgui.logError("Client Upload processing request on connection "+ip);
+        tgui.logInfo("Client Upload processing request on connection "+ip);
         InputStream inputStream = socket.getInputStream();
         OutputStream outputStream = socket.getOutputStream();
         BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
@@ -152,7 +153,7 @@ public class PeerIOThread extends Thread {
 //		 * protocol.
 //		 */
 //
-		processDownloadRequest(bufferedWriter, blockRequest,ip,port);
+		SendRequestedBlocks(bufferedWriter, blockRequest,ip,port);
 //
 //		//******************* finish Goodbye message *************
         try {
@@ -172,13 +173,12 @@ public class PeerIOThread extends Thread {
     /*
      * Methods to process each of the possible requests.
      */
-    private void processDownloadRequest(BufferedWriter bufferedWriter,BlockRequest msg, String ip, int port) throws IOException {
-        tgui.logError("Ready To Download!");
+    private void SendRequestedBlocks(BufferedWriter bufferedWriter, BlockRequest msg, String ip, int port) throws IOException {
         FileMgr fileMgr = sharingFiles.get(msg.fileMd5).fileMgr; // use stored sharing file.
 
 		// check if sharing file the same as requested file using MD5.
 		if (!(fileMgr.getFileDescr().getBlockMd5(msg.blockIdx).equals(msg.fileMd5))) {
-			writeMsg(bufferedWriter,new ErrorMsg("**File Block Unmatched! It should be the same.**"));
+			writeMsg(bufferedWriter,new ErrorMsg("**File Block ready unmatch what it supposed to send! It should be the same.**"));
             return;
 		}
 
@@ -186,13 +186,13 @@ public class PeerIOThread extends Thread {
 		if (fileMgr.isBlockAvailable(msg.blockIdx)) {
 			try {
 				byte[] data = fileMgr.readBlock(msg.blockIdx);
-				writeMsg(bufferedWriter,new BlockReply(msg.filename, fileMgr.getFileDescr().getFileMd5(), msg.blockIdx, new String(data)));
+				writeMsg(bufferedWriter,new BlockReply(msg.filename, fileMgr.getFileDescr().getFileMd5(), msg.blockIdx, Base64.getEncoder().encodeToString(data)));
 			}
 			catch (BlockUnavailableException e) {
 				writeMsg(bufferedWriter,new ErrorMsg("Block is not available!"));
 			}
 		}
-        tgui.logError("Server Send File successfully!");
+        tgui.logInfo("Peer Server Send File successfully!");
     }
 
 
