@@ -9,6 +9,7 @@
 3. Concurrent Sharing/Downloading (Done)
 4. If a peer cannot be connected, move on to next (Done)
 5. If a block is not available (peer stopped sharing, move on to next) (Done)
+6. Multiple blocks download from same peer (Done).
 
 ## Issues
 1. Create FileMgr(filepath) not working for large file (>16MB)
