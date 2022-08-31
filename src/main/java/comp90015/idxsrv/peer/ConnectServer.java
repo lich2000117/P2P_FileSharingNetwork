@@ -67,6 +67,8 @@ public class ConnectServer {
      */
     public void shutdown() throws IOException {
         tgui.logInfo("Connection Closed!");
+        this.bufferedWriter.close();
+        this.bufferedReader.close();
         this.socket.close();
     }
 

@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.TimeUnit;
 
 import comp90015.idxsrv.filemgr.BlockUnavailableException;
 import comp90015.idxsrv.filemgr.FileMgr;
@@ -98,7 +99,7 @@ public class Peer implements IPeer {
 			tgui.addShareRecord(relativePathName, newRecord);
 			//tgui.logInfo("shareFileWithIdxServer Finished!");
 			sharingFiles.put(newRecord.fileMgr.getFileDescr().getFileMd5(), newRecord); // add to our hashmap dictionary
-			//this.run();  // start listening thread
+			connection.shutdown();
 		}
 		catch (FileNotFoundException e) {
 			tgui.logError("File out of Directory!");
@@ -151,6 +152,7 @@ public class Peer implements IPeer {
 				tgui.addSearchHit(fileName, newSearchRecord);
 				//tgui.logInfo("searchRecord Added!");
 			}
+			connection.shutdown();
 		}
 		catch (Exception e) {
 			//e.printStackTrace();
@@ -184,7 +186,9 @@ public class Peer implements IPeer {
 			if (!dropShareReply.success) {
 				return false;
 			}
+			sharingFiles.remove(shareRecord.fileMgr.getFileDescr().getFileMd5());
 			tgui.logInfo("Drop file success!");
+			connection.shutdown();
 			return true;
 		}
 		catch (Exception e) {
@@ -206,7 +210,8 @@ public class Peer implements IPeer {
 		// Perform Look up to get a list of available resources
 		// create and send request to share with server
 		try {
-			//
+
+			//get online sources.
 			IndexElement[] sources = getSourcesFromIdx(relativePathname, searchRecord, connection);
 			if (sources == null) {tgui.logWarn("No Available Sources"); return;}
 
@@ -220,27 +225,49 @@ public class Peer implements IPeer {
 			Set<Integer> remainedBlocksIdx = new HashSet<Integer>();
 			remainedBlocksIdx.clear();
 			getNeededBlockIdx(tempFile, N, remainedBlocksIdx);
+			// check if we still need to download
+			if (remainedBlocksIdx.size() == 0){tgui.logInfo("Local File exists, no need to download"); return;}
+
+			tgui.logDebug("Waiting.....");
+			TimeUnit.SECONDS.sleep(3); // Wait for 5 seconds before connect to pper
+
 			int peerCount = 0;
 			// for every available peer, we try to download file from it
 			for (IndexElement ie : sources) {
 				peerCount += 1;
 				/* Connect to Peer */
 				// try to establish connection and handshake with peer server.
-				Socket socket = new Socket(ie.ip, ie.port);
-				tgui.logError(ie.ip + " : " + ie.port);
-				InputStream inputStream = socket.getInputStream();
-				OutputStream outputStream = socket.getOutputStream();
-				// initialise input and outputStream
-				BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
-				BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
-				tgui.logError("Connecting to Peer: " + ie.ip);
+				Socket socket;
+				BufferedWriter bufferedWriter;
+				BufferedReader bufferedReader;
+				try {
+					socket = new Socket(ie.ip, ie.port);
+					InputStream inputStream = socket.getInputStream();
+					OutputStream outputStream = socket.getOutputStream();
+					// initialise input and outputStream
+					bufferedReader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+					bufferedWriter = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
+					tgui.logInfo("Connecting to Peer: " + ie.ip + " : " + ie.port);
+				} catch (Exception e) {
+					tgui.logInfo("Can NOT connect to Peer: " + ie.ip + " : " + ie.port);
+					continue;
+				}
 
-				// for every needed block, download
-				for (Integer b : remainedBlocksIdx) {
-					// if a block is successfully downloaded, print info
-					if (singleBlockRequest(ie, tempFile, b, bufferedReader, bufferedWriter)) {
-						tgui.logInfo("successfully downloaded block: " + b + " From Peer: " + ie.ip);
+				try {
+					// for every needed block, send download request.
+					for (Integer b : remainedBlocksIdx) {
+						// if a block is successfully downloaded, print info
+						// force skip first peer *************************************************************************************************
+						if (singleBlockRequest(ie, tempFile, b, bufferedReader, bufferedWriter)) {
+							tgui.logInfo("successfully downloaded block: " + b + " From Peer: " + ie.ip);
+						}
+						else{
+							tgui.logInfo("Cannot downloaded block: " + b + " From Peer: " + ie.ip);
+						}
 					}
+				} catch (Exception e) {
+					tgui.logInfo("Block Cannot be downloaded from " + ie.ip + " : " + ie.port);
+					continue;
 				}
 
 				// close connection to current peer
@@ -252,13 +279,14 @@ public class Peer implements IPeer {
 				// if no blocks needed, break loop.
 				if (remainedBlocksIdx.size() == 0) {
 					tgui.logInfo("Finish All Downloading! Number of Peer connected: " + peerCount);
+					connection.shutdown();
 					return;
 				}
-				break;
 			}
 
 			// if reach this line, no peer has required block, print info
 			tgui.logWarn("Download Failed, No peer has following blocks: " + remainedBlocksIdx.toString());
+			connection.shutdown();
 			return;
 		}
 		catch (Exception e) {
@@ -328,7 +356,7 @@ public class Peer implements IPeer {
 		if (auth_back.getClass().getName() == AuthenticateReply.class.getName()) {
 			AuthenticateReply reply = (AuthenticateReply) auth_back;
 			if (reply.success != true) {
-				tgui.logError("Sharing Peer Authentication Failed! Check your Sharer Secret.");
+				tgui.logError("Sharing Peer Authentication Failed! The File may not be available now.");
 				return false;
 			}
 		}

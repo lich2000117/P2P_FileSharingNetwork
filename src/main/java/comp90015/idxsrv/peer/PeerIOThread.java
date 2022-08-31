@@ -27,7 +27,6 @@ public class PeerIOThread extends Thread {
     private LinkedBlockingDeque<Socket> incomingConnections;
     private ISharerGUI tgui;
     private int timeout;
-
     private HashMap<String, ShareRecord> sharingFiles;
     /**
      * Create a Peer IOThread, which attempts to the bind to the provided
@@ -73,6 +72,7 @@ public class PeerIOThread extends Thread {
                         tgui.logWarn("Peer IO thread dropped connection - incoming connection queue is full.");
                     }
                     else {
+
                         // process upcoming socket.
                         SendRequestedBlocks(socket);
                         socket.close();
@@ -135,10 +135,17 @@ public class PeerIOThread extends Thread {
 		if(msg.getClass().getName()==AuthenticateRequest.class.getName()) {
 			AuthenticateRequest ar = (AuthenticateRequest) msg;
 
-            tgui.logError("True" + sharingFiles.get(blockRequest.fileMd5));
+            if (!sharingFiles.containsKey(blockRequest.fileMd5)){
+                writeMsg(bufferedWriter,new AuthenticateReply(false));
+                tgui.logWarn("Cannot Find requested File!");
+                SendGoodBye(bufferedReader, bufferedWriter);
+                return;
+            }
+
 
 			if(!ar.secret.equals(sharingFiles.get(blockRequest.fileMd5).sharerSecret)) {
 				writeMsg(bufferedWriter,new AuthenticateReply(false));
+                tgui.logError("Sharer Key un matched!");
 				return;
 			} else {
 				writeMsg(bufferedWriter,new AuthenticateReply(true));
@@ -156,6 +163,11 @@ public class PeerIOThread extends Thread {
 		SendRequestedBlocks(bufferedWriter, blockRequest,ip,port);
 //
 //		//******************* finish Goodbye message *************
+        SendGoodBye(bufferedReader, bufferedWriter);
+
+    }
+
+    private void SendGoodBye(BufferedReader bufferedReader, BufferedWriter bufferedWriter) throws IOException {
         try {
             // Send Finish GoodBye Signal
             writeMsg(bufferedWriter,new Goodbye());
@@ -167,7 +179,6 @@ public class PeerIOThread extends Thread {
         } catch (Exception e1) {
             writeMsg(bufferedWriter, new ErrorMsg("Fail to exchange good bye signal"));
         }
-
     }
 
     /*

@@ -7,6 +7,8 @@
    - if Connection exception is catched, skip to next peer (with current index)
 2. Memory Issue, after sharing/downloading big files, those files are still occupied
 3. Concurrent Sharing/Downloading (Done)
+4. If a peer cannot be connected, move on to next (Done)
+5. If a block is not available (peer stopped sharing, move on to next) (Done)
 
 ## Issues
 1. Create FileMgr(filepath) not working for large file (>16MB)
@@ -51,8 +53,8 @@ Server:
 
 
 ### Script:
-
-- `copyToSFs.sh` : copy current project to replace all share folders project file (distributed node for testing use different share folders.)
+- `copyToSFs.bat` Windows: copy current project to replace all share folders project file (distributed node for testing use different share folders.)
+- `copyToSFs.sh` Linux: copy current project to replace all share folders project file (distributed node for testing use different share folders.)
 - `cleanDownload.sh` : remove DOWNLOAD folder from download.
 - `runServer.sh` : use `./runServer.sh` to run this script, clear maven package and reintall maven dependencies and 
 - recompile code to run server program.
