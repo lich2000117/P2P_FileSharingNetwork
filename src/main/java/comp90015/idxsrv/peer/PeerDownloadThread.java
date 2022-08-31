@@ -8,12 +8,15 @@ import comp90015.idxsrv.server.IndexElement;
 import comp90015.idxsrv.textgui.ISharerGUI;
 
 import java.io.*;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.LinkedBlockingDeque;
 
 /**
@@ -24,148 +27,212 @@ import java.util.concurrent.LinkedBlockingDeque;
  *
  */
 public class PeerDownloadThread extends Thread {
-    private ServerSocket serverSocket;
-    private LinkedBlockingDeque<Socket> incomingConnections;
+    private final String relativePathname;
+    private final SearchRecord searchRecord;
+    private final ConnectServer connection;
     private ISharerGUI tgui;
     private int timeout;
-    private IOThread ioThread;
     /**
      * Create a Peer IOThread, which attempts to the bind to the provided
      * port with a server socket. The thread must be explicitly started.
      * Also it process the incoming request in socket
-     * @param port the port for the server socket
-     * @param incomingConnections the blocking queue to put incoming connections
-     * @param timeout the timeout value to be set on incoming connections
-     * @param logger an object that implements the terminal logger interface
+     * @param tgui an object that implements the terminal logger interface
      * @throws IOException
      */
-    public PeerDownloadThread(int port,
-                              LinkedBlockingDeque<Socket> incomingConnections,
-                              int timeout,
-                              ISharerGUI logger) throws IOException {
+    public PeerDownloadThread(String relativePathname, SearchRecord searchRecord, ConnectServer connection, ISharerGUI tgui) throws IOException {
+        this.relativePathname = relativePathname;
+        this.searchRecord = searchRecord;
+        this.connection = connection;
         this.timeout = timeout;
-        this.tgui = logger;
-        this.incomingConnections=incomingConnections;
+        this.tgui = tgui;
     }
 
     @Override
     public void run() {
         tgui.logInfo("Downloading thread running");
         while(!isInterrupted()) {
-            // ask for every peer to send their blocks
-        }
-        tgui.logInfo("Downloading thread waiting for IO thread to stop...");
-        ioThread.interrupt();
-        try {
-            ioThread.join();
-        } catch (InterruptedException e) {
-            tgui.logWarn("Interrupted while joining with IO thread.");
+            // ask for every peer to send their blocks, if success, shutdown this thread.
+            if (downloadFileFromPeers(relativePathname, searchRecord, connection)){
+                return;
+            }
+            else {
+                tgui.logError("Can not download file, not enough resources.");
+                return;
+            }
         }
         tgui.logInfo("Downloading thread completed.");
     }
 
-
-
-
-
-    private void ProcessPeerRequest(Socket socket) throws IOException {
-        String ip=socket.getInetAddress().getHostAddress();
-        int port=socket.getPort();
-        tgui.logInfo("Client Upload processing request on connection "+ip);
-        InputStream inputStream = socket.getInputStream();
-        OutputStream outputStream = socket.getOutputStream();
-        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
-        BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
-
-        /*
-         * Follow the synchronous handshake protocol.
-         */
-
-        // get a first message
-        Message msg;
+    private boolean downloadFileFromPeers(String relativePathname, SearchRecord searchRecord, ConnectServer connection) {
+        // Perform Look up to get a list of available resources
+        // create and send request to share with server
         try {
-            msg = readMsg(bufferedReader);
-        } catch (JsonSerializationException e1) {
-            writeMsg(bufferedWriter,new ErrorMsg("Invalid message"));
-            return;
-        }
-        // 1. Continuously get a message with block info
-        while (msg.getClass().getName()==BlockRequest.class.getName()) {
-            BlockRequest blockRequest;
-            blockRequest = (BlockRequest) msg;
 
-            /* 2
-             * Now process our block request. This is a single-request-per-connection
-             * protocol.
-             */
-
-            try {
-                ProcessPeerRequest(bufferedWriter, blockRequest, ip, port);
-            } catch (IOException ioE) {
-                tgui.logError("Couldn't read local file to share with others");
-            } catch (NoSuchAlgorithmException e) {
-                e.printStackTrace();
-                tgui.logError("No such Algorithm");
+            //get online sources.
+            IndexElement[] sources = getSourcesFromIdx(relativePathname, searchRecord, connection);
+            if (sources == null) {tgui.logWarn("No Available Sources");
+                return false;
             }
-            /* 2
-             * Get Another message
-             */
-//            bufferedReader.reset();
-//            bufferedWriter.flush();
-            try {
-                msg = readMsg(bufferedReader);
-            } catch (JsonSerializationException e1) {
-                writeMsg(bufferedWriter,new ErrorMsg("Invalid message"));
-                return;
+
+            /* Load File */
+            // A. Load temp File Create/Open Local unfinished file with FileMgr
+            FileMgr tempFile = getLocalTempFile(relativePathname, searchRecord);
+            int N = tempFile.getFileDescr().getNumBlocks(); //total number of blocks of the file
+            tgui.logInfo("Total Number of Blocks to be downloaded: " + N);
+
+            // get remained blocks required
+            Set<Integer> remainedBlocksIdx = new HashSet<Integer>();
+            remainedBlocksIdx.clear();
+            getNeededBlockIdx(tempFile, N, remainedBlocksIdx);
+            // check if we still need to download
+            if (remainedBlocksIdx.size() == 0){tgui.logInfo("Local File exists, no need to download");
+                return true;
             }
+
+            tgui.logDebug("Waiting.....");
+            //TimeUnit.SECONDS.sleep(3); // Wait for 5 seconds before connect to pper
+
+            int peerCount = 0;
+            // for every available peer, we try to download file from it
+            for (IndexElement ie : sources) {
+                peerCount += 1;
+                /* Connect to Peer */
+                // try to establish connection and handshake with peer server.
+                Socket socket;
+
+                BufferedWriter bufferedWriter;
+                BufferedReader bufferedReader;
+                try {
+                    socket = new Socket(ie.ip, ie.port);
+                    socket.setSoTimeout(10*1000);
+                    InputStream inputStream = socket.getInputStream();
+                    OutputStream outputStream = socket.getOutputStream();
+                    // initialise input and outputStream
+                    bufferedReader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+                    bufferedWriter = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
+                    tgui.logInfo("Connecting to Peer: " + ie.ip + " : " + ie.port);
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    tgui.logInfo("Can NOT connect to Peer: " + ie.ip + " : " + ie.port);
+                    continue;
+                }
+
+                try {
+                    // for every needed block, send download request.
+                    for (Integer b : remainedBlocksIdx) {
+                        // if a block is successfully downloaded, print info
+                        // force skip first peer *************************************************************************************************
+                        if (singleBlockRequest(ie, tempFile, b, bufferedReader, bufferedWriter)) {
+                            tgui.logInfo("successfully downloaded block: " + b + " From Peer: " + ie.ip);
+                        }
+                        else{
+                            tgui.logInfo("Cannot downloaded block: " + b + " From Peer: " + ie.ip);
+                        }
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    tgui.logInfo("Block Cannot be downloaded from " + ie.ip + " : " + ie.port);
+                    continue;
+                }
+                // close connection to current peer
+                GoodByeToPeer(socket, bufferedReader, bufferedWriter);
+                // after download, get still remained needed blocks index
+                remainedBlocksIdx.clear();
+                getNeededBlockIdx(tempFile, N, remainedBlocksIdx);
+                // if no blocks needed, break loop.
+                if (remainedBlocksIdx.size() == 0) {
+                    tgui.logInfo("Finish All Downloading! Number of Peer connected: " + peerCount);
+                    connection.shutdown();
+                    return true;
+                }
+            }
+
+            // if reach this line, no peer has required block, print info
+            tgui.logWarn("Download Failed, No peer has following blocks: " + remainedBlocksIdx.toString());
+            connection.shutdown();
+            return false;
         }
-
-        // at this stage, the message type is not block request, try say good bye
-        if (!(msg.getClass().getName() == Goodbye.class.getName())){
-            writeMsg(bufferedWriter,new ErrorMsg("Invalid Message!"));
-            return;
+        catch (Exception e) {
+            e.printStackTrace();
+            tgui.logError("Download Error Occur!");
+            return false;
         }
-
-		//3 ******************* finish Goodbye message *************
-        SendGoodBye(bufferedReader, bufferedWriter);
-
     }
-
-    private void SendGoodBye(BufferedReader bufferedReader, BufferedWriter bufferedWriter) throws IOException {
+    private void GoodByeToPeer(Socket socket, BufferedReader bufferedReader, BufferedWriter bufferedWriter) throws IOException {
+        //******************* finish Goodbye message *************
         try {
             // Send Finish GoodBye Signal
             writeMsg(bufferedWriter,new Goodbye());
             // receive GoodBye Signal
             Goodbye gb = (Goodbye) readMsg(bufferedReader);
+            // close the socket
+            socket.close();
         } catch (Exception e1) {
-            writeMsg(bufferedWriter, new ErrorMsg("Fail to exchange good bye signal"));
+            writeMsg(bufferedWriter, new ErrorMsg("Download Peer: Fail to exchange good bye signal"));
+        }
+        tgui.logInfo("GoodBye Exchanged With: " + socket.getInetAddress());
+    }
+
+    private void getNeededBlockIdx(FileMgr tempFile, int N, Set<Integer> remainedBlocksIdx) throws IOException, BlockUnavailableException {
+        remainedBlocksIdx.clear();
+        for(int b = 0; b< N; b++) {
+            // Check Local Block exists completed? check if we have file already, no need to download.
+            if (tempFile.isBlockAvailable(b)) {
+                byte[] localBlockData = tempFile.readBlock(b);
+                if (tempFile.checkBlockHash(b, localBlockData)) {
+                    //tgui.logInfo();
+                    continue; // next block
+                }
+            }
+            // if not downloaded, add to our download list
+            remainedBlocksIdx.add(b);
         }
     }
 
-    /*
-     * Methods to process each of the possible requests.
+    /**
+     * create or load a local temporary file from disk
+     * @param relativePathname
+     * @param searchRecord
+     * @return
+     * @throws IOException
+     * @throws NoSuchAlgorithmException
      */
-    private void ProcessPeerRequest(BufferedWriter bufferedWriter, BlockRequest msg, String ip, int port) throws IOException, NoSuchAlgorithmException {
+    private FileMgr getLocalTempFile(String relativePathname, SearchRecord searchRecord) throws IOException, NoSuchAlgorithmException {
+        // create DOWNLOAD directory for download
+        (new File("DOWNLOAD/" + new File(relativePathname).getParent())).mkdirs();
 
-        FileMgr fileMgr = new FileMgr(msg.filename);
+        String downloadPath = new File("DOWNLOAD/", relativePathname).getPath();
+        tgui.logInfo("Download into : " + downloadPath);
+        FileMgr localTempFile = new FileMgr(downloadPath, searchRecord.fileDescr);
+        return localTempFile;
+    }
 
-		// check if sharing file the same as requested file using MD5.
-		if (!(fileMgr.getFileDescr().getBlockMd5(msg.blockIdx).equals(msg.fileMd5))) {
-			writeMsg(bufferedWriter,new ErrorMsg(msg.filename + " ] " +fileMgr.getFileDescr().getBlockMd5(msg.blockIdx) + "  Versus:  " + msg.fileMd5 + " **File Block ready unmatch what it supposed to send! It should be the same.**"));
-            return;
-		}
-
-		// access local block file and send blockReply
-		if (fileMgr.isBlockAvailable(msg.blockIdx)) {
-			try {
-				byte[] data = fileMgr.readBlock(msg.blockIdx);
-				writeMsg(bufferedWriter,new BlockReply(msg.filename, fileMgr.getFileDescr().getFileMd5(), msg.blockIdx, Base64.getEncoder().encodeToString(data)));
-			}
-			catch (BlockUnavailableException e) {
-				writeMsg(bufferedWriter,new ErrorMsg("Block is not available!"));
-			}
-		}
-        tgui.logInfo("Peer Server Send File successfully!");
+    /**
+     * Return a list of available Peer sources, IndexElement[]
+     * @param relativePathname
+     * @param searchRecord
+     * @param connection
+     * @return
+     * @throws IOException
+     * @throws JsonSerializationException
+     */
+    private IndexElement[] getSourcesFromIdx(String relativePathname, SearchRecord searchRecord, ConnectServer connection) throws IOException, JsonSerializationException {
+        //send request to get a file with same name and same MD5 code as file described in index server.
+        Message msgToSend = new LookupRequest(relativePathname, searchRecord.fileDescr.getFileMd5());
+        connection.sendRequest(msgToSend);
+        // receive reply
+        Message msg_back = connection.getMsg();
+        // check if reply is a success flag to return false or true.
+        if (!checkReply(msg_back)){
+            return null;
+        }
+        LookupReply lookupReply = (LookupReply) msg_back;
+        // get an array of available resources
+        IndexElement[] sources = lookupReply.hits;
+        tgui.logInfo("Get File Sources Success!");
+        connection.shutdown();  // shutdown connection with Server
+        return sources;
     }
 
 
@@ -190,6 +257,19 @@ public class PeerDownloadThread extends Thread {
             throw new IOException();
         }
     }
+
+    /*
+    check the reply from server, if it's error message, return false, print to console.
+    Otherwise return true to indicate reply is valid.
+     */
+    private boolean checkReply(Message msg_back){
+        if (msg_back.getClass().getName() == ErrorMsg.class.getName()) {
+            tgui.logError(((ErrorMsg) msg_back).msg);
+            return false;
+        }
+        return true;
+    }
+
 
     /**
      * 1. send a block request with filename first.

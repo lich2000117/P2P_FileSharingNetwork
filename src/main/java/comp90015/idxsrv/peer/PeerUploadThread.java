@@ -43,10 +43,12 @@ public class PeerUploadThread extends Thread {
     public PeerUploadThread(int port,
                             LinkedBlockingDeque<Socket> incomingConnections,
                             int timeout,
-                            ISharerGUI logger) throws IOException {
+                            ISharerGUI logger,
+                            IOThread ioThread) throws IOException {
         this.timeout = timeout;
         this.tgui = logger;
         this.incomingConnections=incomingConnections;
+        this.ioThread = ioThread;
     }
 
     @Override
@@ -141,17 +143,16 @@ public class PeerUploadThread extends Thread {
 
 		//3 ******************* finish Goodbye message *************
         SendGoodBye(bufferedReader, bufferedWriter);
-
+        tgui.logInfo("Peer finished all uploadings.");
     }
 
     private void SendGoodBye(BufferedReader bufferedReader, BufferedWriter bufferedWriter) throws IOException {
         try {
             // Send Finish GoodBye Signal
+            // only receive Goodbye from socket side since the socket might be closed if we try to receive something
             writeMsg(bufferedWriter,new Goodbye());
-            // receive GoodBye Signal
-            Goodbye gb = (Goodbye) readMsg(bufferedReader);
         } catch (Exception e1) {
-            writeMsg(bufferedWriter, new ErrorMsg("Fail to exchange good bye signal"));
+            writeMsg(bufferedWriter, new ErrorMsg("Upload Peer: Fail to exchange good bye signal"));
         }
     }
 

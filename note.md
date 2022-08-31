@@ -10,9 +10,11 @@
 4. If a peer cannot be connected, move on to next (Done)
 5. If a block is not available (peer stopped sharing, move on to next) (Done)
 6. Multiple blocks download from same peer (Done).
+7. Use extra Thread for peer download request, that enables client GUI run even when downloading (Done)
 
 ## Issues
-1. Create FileMgr(filepath) not working for large file (>16MB)
+1. Create FileMgr(filepath) not working for large file (>16MB) (Solved)
+2. If peer shutdown during upload/download, program crash. It need to switch to next peer.
 
 ## Big To DO
 1. get peer to peer connection working. (Done)
