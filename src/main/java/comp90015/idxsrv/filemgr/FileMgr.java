@@ -193,4 +193,13 @@ public class FileMgr {
 		return fileDescr;
 	}
 	
+	/**
+	 * Close the file. The file manager should not be used after calling
+	 * this method.
+	 * @throws IOException 
+	 */
+	public void closeFile() throws IOException {
+		file.close();
+	}
+	
 }
