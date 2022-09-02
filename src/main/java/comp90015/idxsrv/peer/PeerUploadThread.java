@@ -3,6 +3,7 @@ package comp90015.idxsrv.peer;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
@@ -104,6 +105,10 @@ public class PeerUploadThread extends Thread {
             writeMsg(bufferedWriter,new ErrorMsg("Invalid message"));
             return;
         }
+        catch (SocketTimeoutException e){
+            tgui.logError("Upload Peer Socket Timeout");
+            return;
+        }
         // 1. Continuously get a message with block info
         while (msg.getClass().getName()==BlockRequest.class.getName()) {
             BlockRequest blockRequest;
@@ -131,6 +136,10 @@ public class PeerUploadThread extends Thread {
                 msg = readMsg(bufferedReader);
             } catch (JsonSerializationException e1) {
                 writeMsg(bufferedWriter,new ErrorMsg("Invalid message"));
+                return;
+            }
+            catch (SocketTimeoutException e){
+                tgui.logError("Upload Peer Socket Timeout");
                 return;
             }
         }
@@ -166,6 +175,7 @@ public class PeerUploadThread extends Thread {
 		// check if sharing file the same as requested file using MD5.
 		if (!(fileMgr.getFileDescr().getBlockMd5(msg.blockIdx).equals(msg.fileMd5))) {
 			writeMsg(bufferedWriter,new ErrorMsg(msg.filename + " ] " +fileMgr.getFileDescr().getBlockMd5(msg.blockIdx) + "  Versus:  " + msg.fileMd5 + " **File Block ready unmatch what it supposed to send! It should be the same.**"));
+            fileMgr.closeFile();
             return;
 		}
 
@@ -180,6 +190,7 @@ public class PeerUploadThread extends Thread {
 			}
 		}
         tgui.logInfo("Peer Server Send File successfully!");
+        fileMgr.closeFile();
     }
 
 
@@ -205,44 +216,4 @@ public class PeerUploadThread extends Thread {
         }
     }
 
-    /**
-     * 1. send a block request with filename first.
-     * 2. send another request with the sharer secret
-     * 3. get msg from peer back indicate success or not.
-     * 4. read block reply from peer server.
-     * return True if success
-     *
-     * @param source
-     * @param tempFile
-     * @param blockIdx_Need
-     * @param bufferedReader
-     * @param bufferedWriter
-     */
-    public boolean singleBlockRequest(IndexElement source, FileMgr tempFile, int blockIdx_Need, BufferedReader bufferedReader, BufferedWriter bufferedWriter) throws IOException, JsonSerializationException {
-        // 1. (HandShake 1): Send Block request
-        writeMsg(bufferedWriter, new BlockRequest(source.filename, tempFile.getFileDescr().getBlockMd5(blockIdx_Need), blockIdx_Need));
-
-        // 2. download block files.
-        Message msg = readMsg(bufferedReader);
-        if (!(msg.getClass().getName() == BlockReply.class.getName())) { tgui.logError("Invalid Message");
-            return false;
-        }
-        // 3. Check Block Hash, see if the block we want is the same as received using MD5
-        BlockReply block_reply = (BlockReply) msg;
-        byte[] receivedData = Base64.getDecoder().decode(new String(block_reply.bytes).getBytes("UTF-8"));
-        if (!(tempFile.checkBlockHash(blockIdx_Need, receivedData))){
-            tgui.logError("Received Block is not the one we want");
-            return false;
-        }
-
-        // 6. Write to Local File's block with FileMgr
-        if (tempFile.writeBlock(blockIdx_Need, receivedData)){
-            tgui.logInfo("Received Block written to File!");
-        }
-        else{
-            tgui.logError("Received Block Not written to File!");
-            return false;
-        }
-        return true;
-    }
 }

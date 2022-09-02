@@ -11,6 +11,17 @@
 5. If a block is not available (peer stopped sharing, move on to next) (Done)
 6. Multiple blocks download from same peer (Done).
 7. Use extra Thread for peer download request, that enables client GUI run even when downloading (Done)
+8. Share, search, drop From peer Code clean up. (Done)
+9. Download From peer Code clean up.
+
+## Current Logic
+- Peer always has an upload thread running in background, taking connections, and providing asked block
+- Peer when request block, it initialises a download thread in background, make multiple connections (default 4, need to pass as configurable parameter), 
+store reader and writer into array, send request in every reader. read from all reader to download.
+- Every time a note times out, program ignore it in current request-download progress,
+but after each progress, program check if there are additional resources to fill in the blank where
+that broken node left. If no more resources, it won't allocate more, but the program still runs in current number
+of activated peers, if all peers dropped connection, download fail.
 
 ## Issues
 1. Create FileMgr(filepath) not working for large file (>16MB) (Solved)

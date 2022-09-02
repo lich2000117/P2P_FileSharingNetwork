@@ -61,50 +61,47 @@ public class Peer implements IPeer {
 	public void shareFileWithIdxServer(File file, InetAddress idxAddress, int idxPort, String idxSecret,
 			String shareSecret) {
 		// Check if file in base dir
-		if (! file.getParent().contains(basedir)){tgui.logError("File Not in Base Directory!"); return;}
+		if (! file.getParent().contains(basedir)){tgui.logWarn("Sharing File Not in Base Directory!"); return;}
 
-		// try to establish connection and handshake.
+		// try to establish connection and handshake with idx server.
 		ConnectServer connection = new ConnectServer(this.tgui);
-		if (!connection.MakeConnection(idxAddress, idxPort, idxSecret)) {
-			tgui.logError("Connection to IdxServer Failed!");
-			return;
-		}
+		if (!connection.MakeConnection(idxAddress, idxPort, idxSecret)) return;
 
-		// create and send request to share with server
+		// create and send request to share with idx server
 		try{
-			RandomAccessFile raFile = new RandomAccessFile(file, "r");
+			// FileMgr load local file
 			String filePath = file.getPath();
 			String relativePathName = new File(basedir).toURI().relativize(new File(filePath).toURI()).getPath();
-
 			FileMgr fileMgr = new FileMgr(filePath);
 
-			//send request
-			Message msgToSend = new ShareRequest(fileMgr.getFileDescr(), relativePathName, shareSecret, this.port);
+			// send request
+			connection.sendRequest(new ShareRequest(fileMgr.getFileDescr(), relativePathName, shareSecret, this.port));
 
-			connection.sendRequest(msgToSend);
-
-			// receive reply
+			// receive reply from idx server
 			Message msg_back = connection.getMsg();
-
 			// check if it's error message
-			if (!checkReply(msg_back)){return;}
+			if (!checkReply(msg_back)){tgui.logWarn("Something wrong with Server Side.");return;}
 
-			// if server accept, add to GUI
+			// Add to GUI
 			ShareReply reply = (ShareReply) msg_back;
-			ShareRecord newRecord = new ShareRecord(fileMgr, reply.numSharers," ", idxAddress,
+			ShareRecord newRecord = new ShareRecord(fileMgr, reply.numSharers,"Ready", idxAddress,
 					idxPort, idxSecret, shareSecret);
-
 			tgui.addShareRecord(relativePathName, newRecord);
-			//tgui.logInfo("shareFileWithIdxServer Finished!");
 			connection.shutdown();
+			fileMgr.closeFile();
+			tgui.logInfo("shareFileWithIdxServer Finished!");
 		}
 		catch (FileNotFoundException e) {
 			tgui.logError("File out of Directory!");
 			return;
-		}
-		catch (Exception e) {
-			tgui.logError("shareFileWithIdxServer Failed!");
-			e.printStackTrace();
+		} catch (JsonSerializationException e) {
+			tgui.logError("JsonSerializationException");
+			return;
+		} catch (NoSuchAlgorithmException e) {
+			tgui.logError("NoSuchAlgorithmException");
+			return;
+		} catch (IOException e) {
+			tgui.logError("IO operation failed! Abort");
 			return;
 		}
 	}
@@ -115,84 +112,74 @@ public class Peer implements IPeer {
 			InetAddress idxAddress,
 			int idxPort,
 			String idxSecret) {
-		// try to establish connection and handshake.
+		// try to establish connection and handshake with idx server.
 		ConnectServer connection = new ConnectServer(this.tgui);
-		if (!connection.MakeConnection(idxAddress, idxPort, idxSecret)) {
-			tgui.logError("Connection to Idx Server Failed!");
-			return;
-		}
+		if (!connection.MakeConnection(idxAddress, idxPort, idxSecret)) return;
 
-		// Go on with current request
+		// Send current request to IDX server
 		try {
-			// Send search request
-			Message msgToSend = new SearchRequest(maxhits, keywords);
-			connection.sendRequest(msgToSend);
-			// Add file info to GUI table
+			// Send search request and get message back
+			connection.sendRequest(new SearchRequest(maxhits, keywords));
 			Message search_back = connection.getMsg();
-			SearchReply searchReply = (SearchReply) search_back;
 			// check if it's error message
-			if (!checkReply(searchReply)){
+			if (!checkReply(search_back)){
+				tgui.logError("Something Wrong with the Server Side.");
 				return;
-			};
-			//tgui.logInfo("searchReply Received!");
+			}
+			SearchReply searchReply = (SearchReply) search_back;
+
+			// Add file info to GUI table
 			IndexElement[] hits = searchReply.hits;
 			Integer[] seedCounts = searchReply.seedCounts;
 			// before add, remove previous history
 			tgui.clearSearchHits();
 			// iterate through list of returned request (All relevant file lists + number of sharer for each file)
 			for (int i = 0; i < hits.length; i++) {
+				// create new searchRecord class and add to our gui table.
 				IndexElement ie = hits[i];
-				int curSeedCounts = seedCounts[i];
-				String fileName = ie.filename;
-
-				// create new searchrecord class and add to our gui table.
 				SearchRecord newSearchRecord =
-						new SearchRecord(ie.fileDescr, curSeedCounts, idxAddress, idxPort, idxSecret, ie.secret);
-				tgui.addSearchHit(fileName, newSearchRecord);
-				//tgui.logInfo("searchRecord Added!");
+						new SearchRecord(ie.fileDescr, seedCounts[i], idxAddress, idxPort, idxSecret, ie.secret);
+				tgui.addSearchHit(ie.filename, newSearchRecord);
 			}
 			connection.shutdown();
-		}
-		catch (Exception e) {
-			//e.printStackTrace();
-			tgui.logError("searchIdxServer Failed!");
+			tgui.logInfo("searchIdxServer Finished!");
+		} catch (JsonSerializationException e) {
+			tgui.logError("JsonSerializationException");
+			return;
+		} catch (IOException e) {
+			tgui.logError("IO exception found");
 			return;
 		}
-		tgui.logInfo("searchIdxServer Finished!");
 	}
 
 
 	@Override
 	public boolean dropShareWithIdxServer(String relativePathname, ShareRecord shareRecord) {
 
-		// try to establish connection and handshake with server.
+		// try to establish connection and handshake with idx server.
 		ConnectServer connection = new ConnectServer(this.tgui);
-		if (!connection.MakeConnection(shareRecord.idxSrvAddress, shareRecord.idxSrvPort, shareRecord.idxSrvSecret)) {
-			tgui.logError("Connection to Idx Server Failed!");
-			return false;
-		}
+		if (!connection.MakeConnection(shareRecord.idxSrvAddress, shareRecord.idxSrvPort, shareRecord.idxSrvSecret)) return false;
 
 		// create and send request to share with server
 		try {
 			//send request
-			Message msgToSend = new DropShareRequest(relativePathname, shareRecord.fileMgr.getFileDescr().getFileMd5(),
-					shareRecord.sharerSecret, this.port);
-			connection.sendRequest(msgToSend);
+			connection.sendRequest(new DropShareRequest(relativePathname, shareRecord.fileMgr.getFileDescr().getFileMd5(),
+					shareRecord.sharerSecret, this.port));
 			// receive reply
 			Message msg_back = connection.getMsg();
 			// check if reply is a success flag to return false or true.
-			if (!checkReply(msg_back)){return false;}
+			if (!checkReply(msg_back)){tgui.logError("Something Wrong with the Server Side."); return false;}
 			DropShareReply dropShareReply = (DropShareReply) msg_back;
-			if (!dropShareReply.success) {
-				return false;
-			}
-			tgui.logInfo("Drop file success!");
+			if (!dropShareReply.success) { tgui.logError("Server failed to drop the record"); return false;}
+
 			connection.shutdown();
+			shareRecord.fileMgr.closeFile();
+			tgui.logInfo("Drop file success!");
 			return true;
 		}
 		catch (Exception e) {
 			//e.printStackTrace();
-			tgui.logError("Drop file Failed!");
+			tgui.logError("An error occured when Dropping file!");
 			return false;
 		}
 	}
@@ -201,10 +188,7 @@ public class Peer implements IPeer {
 	public void downloadFromPeers(String relativePathname, SearchRecord searchRecord) {
 		// try to establish connection and handshake with index server.
 		ConnectServer connection = new ConnectServer(this.tgui);
-		if (!connection.MakeConnection(searchRecord.idxSrvAddress, searchRecord.idxSrvPort, searchRecord.idxSrvSecret)) {
-			tgui.logError("Connection with Idx Server Failed!");
-			return;
-		}
+		if (!connection.MakeConnection(searchRecord.idxSrvAddress, searchRecord.idxSrvPort, searchRecord.idxSrvSecret)) return;
 
 		// create a thread to ask for download and make it run.
 		PeerDownloadThread downloadThread;

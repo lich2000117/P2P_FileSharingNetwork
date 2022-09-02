@@ -22,11 +22,12 @@ public class ConnectServer {
     }
 
     /**
-     * Make a socket Connection towards target Server.
-     * 1. establish socket connection.
-     * 2. send authentication request;
-     * 2.1. get welcome message from server;
-     * 3. receive confirm reply from server after authenticate.
+     * Make a socket Connection towards target Index Server.
+     * Should Follow the same protocol with Server:
+         * 1. establish socket connection.
+         * 2. send authentication request;
+         * 2.1. get welcome message from server;
+         * 3. receive confirm reply from server after authenticate.
      */
     public boolean MakeConnection(InetAddress Address, int Port, String Secret){
         try {
@@ -37,27 +38,28 @@ public class ConnectServer {
             // initialise input and outputStream
             this.bufferedReader = new BufferedReader(new InputStreamReader(this.inputStream, StandardCharsets.UTF_8));
             this.bufferedWriter = new BufferedWriter(new OutputStreamWriter(this.outputStream, StandardCharsets.UTF_8));
-            this.tgui.logInfo("Connection to Server Established!");
 
-            // 2. (HandShake 1): Write an authenticate message to establish authenticated message
+            /* Suppose to Follow a Synchronized protocol with Server */
+            // 2. (HandShake 1): Write an authentication message to establish authenticated message
             writeMsg(bufferedWriter, new AuthenticateRequest(Secret));
 
             // 2.1 Get a Welcome Message
             Message welcome_msg = readMsg(bufferedReader);
-            tgui.logInfo(welcome_msg.toString());
 
             // 3. (HandShake 2): Check authenticate reply from server
             Message auth_back = readMsg(bufferedReader);
             if (auth_back.getClass().getName() == AuthenticateReply.class.getName()) {
                 AuthenticateReply reply = (AuthenticateReply) auth_back;
                 if (reply.success != true) {
-                    tgui.logError("ServerSide Authentication Failed! Check your secret with that server.");
+                    tgui.logError("ServerSide Authentication Failed! Check your secret with Index Server.");
                     return false;
                 }
             }
+            tgui.logInfo("Successfully connected to index server!");
             return true;
         }
         catch (Exception e){
+            tgui.logWarn("Failed to connect to index server!");
             return false;
         }
     }
@@ -66,9 +68,7 @@ public class ConnectServer {
     Shutdown current connection.
      */
     public void shutdown() throws IOException {
-        tgui.logInfo("Connection Closed!");
-        this.bufferedWriter.close();
-        this.bufferedReader.close();
+        tgui.logInfo("Connection to Idx Server Closed!");
         this.socket.close();
     }
 
