@@ -57,26 +57,24 @@ public class PeerUploadThread extends Thread {
         while(!isInterrupted()) {
             try {
                 Socket socket = incomingConnections.take();
-                socket.setSoTimeout(10*1000);
+                socket.setSoTimeout(3*1000);
                 ProcessBlockRequest(socket);
-                socket.close();
-            } catch (InterruptedException e) {
+            } catch (InterruptedException | IOException e) {
 
-                tgui.logWarn("Peer IO thread interrupted.");
+                tgui.logWarn("Peer Upload thread interrupted.");
                 break;
-            } catch (IOException e) {
-                e.printStackTrace();
-                tgui.logWarn("Peer IO thread received io exception on socket.");
+            } catch (Exception e) {
+                tgui.logWarn("Socket has been closed!");
             }
         }
-        tgui.logInfo("Peer IO thread thread waiting for IO thread to stop...");
+        tgui.logInfo("Peer Upload thread thread waiting for IO thread to stop...");
         ioThread.interrupt();
         try {
             ioThread.join();
         } catch (InterruptedException e) {
             tgui.logWarn("Interrupted while joining with IO thread.");
         }
-        tgui.logInfo("Peer IO thread thread completed.");
+        tgui.logInfo("Peer Upload thread thread completed.");
     }
 
 
@@ -148,9 +146,9 @@ public class PeerUploadThread extends Thread {
             writeMsg(bufferedWriter,new ErrorMsg("Invalid Message!"));
             return;
         }
+        tgui.logInfo("Upload Peer: Goobye Received!");
 
 		//3 ******************* finish Goodbye message *************
-        SendGoodBye(bufferedReader, bufferedWriter);
         tgui.logInfo("Peer finished all uploadings.");
     }
 

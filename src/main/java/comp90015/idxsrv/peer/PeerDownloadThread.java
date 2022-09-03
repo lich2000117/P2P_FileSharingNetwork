@@ -27,6 +27,19 @@ public class PeerDownloadThread extends Thread {
     private ISharerGUI tgui;
     private int maxPeer = 2; // download from how many peers maximum
     private int timeout;
+    private BlockWriteThread writeThread;
+    private FileMgr tempFile;
+    private int totalN;
+    private Set<Integer> remainedBlocksIdx;
+    private IndexElement[] sources;
+
+    // to iterate blocks index
+    private ArrayList<Integer> neededIndex_Array;
+    // to Store Connections
+    private ArrayList<Socket> socket_Array = new ArrayList<Socket>();
+    private ArrayList<BufferedReader> bufferReader_Array = new ArrayList<BufferedReader>();
+    private ArrayList<BufferedWriter> bufferWriter_Array = new ArrayList<BufferedWriter>();
+
 
     private int cur_BlockArrayIndex = 0; // Index of NeededBlockIndex_Array, Not index of Block!
     private int peerTriedCount = 0; // Number of connections made
@@ -53,6 +66,7 @@ public class PeerDownloadThread extends Thread {
         while(!isInterrupted()) {
             // ask for every peer to send their blocks, if all file success, success and shutdown this thread.
             if (downloadFileFromPeers(relativePathname, searchRecord, connection)){
+                tgui.logInfo("Successfully download ALL blocks!");
                 return;
             }
             // if download failed, return and print error message
@@ -67,15 +81,13 @@ public class PeerDownloadThread extends Thread {
     private boolean downloadFileFromPeers(String relativePathname, SearchRecord searchRecord, ConnectServer connection) {
         // Perform Look up to get a list of available resources
         // create and send request to share with server
-        FileMgr tempFile;
-        int totalN;
-        Set<Integer> remainedBlocksIdx;
-        IndexElement[] sources;
-        BlockWriteThread writeThread;
+
+
         try {
 
             //get online available sources.
             sources = getSourcesFromIdx(relativePathname, searchRecord, connection);
+            connection.shutdown();  // shutdown connection with Server
             if (sources == null) {
                 tgui.logWarn("No Available Sources");
                 return false;
@@ -93,8 +105,9 @@ public class PeerDownloadThread extends Thread {
 
             // get remained blocks required
             remainedBlocksIdx = new HashSet<Integer>();
-            if (UpdateIndexAndCheckComplete(writeThread, tempFile, totalN, remainedBlocksIdx)) return true;
+            if (UpdateIndexAndCheckComplete()) return true;
             int remainNum = remainedBlocksIdx.size();
+            neededIndex_Array = new ArrayList<>(remainedBlocksIdx);
             tgui.logInfo("Total Number of Blocks To Download: " + remainNum);
         } catch (Exception e) {
             e.printStackTrace();
@@ -115,39 +128,48 @@ public class PeerDownloadThread extends Thread {
 
         */
 
-        // to iterate blocks index
-        ArrayList<Integer> neededIndex_Array = new ArrayList<>(remainedBlocksIdx);
-        // to Store Connections
-        ArrayList<Socket> socket_Array = new ArrayList<Socket>();
-        ArrayList<BufferedReader> bufferReader_Array = new ArrayList<BufferedReader>();
-        ArrayList<BufferedWriter> bufferWriter_Array = new ArrayList<BufferedWriter>();
 
         // 1. Make connection to peers, restricted to maxPeer, maximum amount of peers to connect.
         //while (MakeConnectionToPeers(neededIndex_Array.size(), sources, socket_Array, bufferReader_Array, bufferWriter_Array)) {
-        while (MakeConnectionToPeers(remainedBlocksIdx.size(), sources, socket_Array, bufferReader_Array, bufferWriter_Array)) {
+        while (MakeConnectionToPeers()) {
             //System.out.println(cur_BlockArrayIndex);
             neededIndex_Array = new ArrayList<>(remainedBlocksIdx);
-            if (SendRequestsToConnections(tempFile, neededIndex_Array, socket_Array, bufferReader_Array, bufferWriter_Array)) {
-                GetBlockReply_AddQueue(socket_Array, bufferReader_Array, bufferWriter_Array);
+            if (SendRequestsToConnections(tempFile)) {
+                GetBlockReply_AddQueue(socket_Array);
             }
             try {
                 // if complete file transfer
-                if (UpdateIndexAndCheckComplete(writeThread, tempFile, totalN, remainedBlocksIdx)) {
+                if (UpdateIndexAndCheckComplete()) {
                     //System.out.println("Local File Complete!");
                     // close existing sockets
                     for (Socket skt : socket_Array) {
                         int i = socket_Array.indexOf(skt);
                         try {
                             GoodByeToPeer(skt, bufferReader_Array.get(i), bufferWriter_Array.get(i));
-                            skt.close();
                         }
                         catch (Exception e) {tgui.logWarn("Upload Peer timed out before we say goodbye");}
                     }
                     return true;
                 }
                 else{
-                    // if still got download remaining, reset count and continue to establish connections
-                    peerTriedCount = 0;
+                    // if still got download remaining and we lost some connection. reset count and all connections continue to establish connections
+                    if (curPeerCount < Integer.min(totalN, maxPeer)) {
+                        peerTriedCount = 0;
+                        curPeerCount = 0;
+                        bufferReader_Array.clear();
+                        bufferWriter_Array.clear();
+                        socket_Array.clear();
+                        // need to reconnect to idx first! then query.
+                        // get idx resources again.
+                        ConnectServer connectionRetry = new ConnectServer(this.tgui);
+                        if (connectionRetry.MakeConnection(searchRecord.idxSrvAddress, searchRecord.idxSrvPort, searchRecord.idxSrvSecret)) {
+                            sources = getSourcesFromIdx(relativePathname, searchRecord, connectionRetry);
+                            if (sources == null) {
+                                tgui.logWarn("No Available Sources");
+                                return false;
+                            }
+                        }
+                    }
                 }
             } catch (Exception e) {
                 System.out.println(e);
@@ -169,9 +191,8 @@ public class PeerDownloadThread extends Thread {
      * Return True if it succefully connects,
      * return false if no connections has been made, meaning maybe no peer is available.
      */
-    private boolean MakeConnectionToPeers(int NumBlocks, IndexElement[] sources, ArrayList<Socket> socketList,
-                                       ArrayList<BufferedReader> readerList, ArrayList<BufferedWriter> writerList) {
-        int limit = Integer.min(NumBlocks, maxPeer);
+    private boolean MakeConnectionToPeers() {
+        int limit = Integer.min(remainedBlocksIdx.size(), maxPeer);
         Iterator<IndexElement> itr = Arrays.stream(sources).iterator();
         // if we have no resources left, don't create new connection, skip while loop
         while (peerTriedCount < sources.length) {
@@ -189,7 +210,7 @@ public class PeerDownloadThread extends Thread {
             BufferedReader bufferedReader;
             try {
                 socket = new Socket(ie.ip, ie.port);
-                socket.setSoTimeout(10*1000);
+                socket.setSoTimeout(3*1000);
                 //socket.setSoTimeout(this.timeout);
                 InputStream inputStream = socket.getInputStream();
                 OutputStream outputStream = socket.getOutputStream();
@@ -197,7 +218,7 @@ public class PeerDownloadThread extends Thread {
                 bufferedReader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
                 bufferedWriter = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
                 tgui.logInfo("Connected to Peer: " + ie.ip + " : " + ie.port);
-                addConnectionArray(socket, bufferedReader, bufferedWriter, socketList, readerList, writerList);
+                addConnectionArray(socket, bufferedReader, bufferedWriter, socket_Array, bufferReader_Array, bufferWriter_Array);
                 //System.out.println("Add another connection");
                 peerTriedCount += 1;
                 curPeerCount += 1;
@@ -248,15 +269,12 @@ public class PeerDownloadThread extends Thread {
      * return true if at least one request has been sent
      *
      * */
-    private boolean SendRequestsToConnections(FileMgr tempFile, ArrayList<Integer> neededIndex_Array,
-                                           ArrayList<Socket> socket_Array, ArrayList<BufferedReader> reader_Array,
-                                           ArrayList<BufferedWriter> writer_Array) {
+    private boolean SendRequestsToConnections(FileMgr tempFile) {
         // iterate through our writer and write messages to peers.
-        ListIterator<BufferedWriter> itr = writer_Array.listIterator();
-
+        ListIterator<BufferedWriter> itr = bufferWriter_Array.listIterator();
         while (itr.hasNext()) {
             BufferedWriter writer = itr.next();
-            int connection_index = writer_Array.indexOf(writer);
+            int connection_index = bufferWriter_Array.indexOf(writer);
             // for next ONE needed block, send download request.
 
             // if no blocks request to be sent, return.
@@ -275,7 +293,7 @@ public class PeerDownloadThread extends Thread {
                 curPeerCount -= 1;
                 itr.remove();
                 socket_Array.remove(connection_index);
-                reader_Array.remove(connection_index);
+                bufferReader_Array.remove(connection_index);
             }
             catch (IOException e) {
                 // if other error occurs, remove connection and continue to next peer.
@@ -283,7 +301,7 @@ public class PeerDownloadThread extends Thread {
                 curPeerCount -= 1;
                 itr.remove();
                 socket_Array.remove(connection_index);
-                reader_Array.remove(connection_index);
+                bufferReader_Array.remove(connection_index);
             }
 
         }
@@ -303,23 +321,20 @@ public class PeerDownloadThread extends Thread {
      * update required block index,
      * reset current progress on block index transfer
      * if all finish, close file stream
-     * @param tempFile
-     * @param totalN
-     * @param remainedBlocksIdx
      * @return
      * @throws IOException
      * @throws BlockUnavailableException
      */
-    private boolean UpdateIndexAndCheckComplete(BlockWriteThread blockWriteThread, FileMgr tempFile, int totalN, Set<Integer> remainedBlocksIdx) throws IOException, BlockUnavailableException {
+    private boolean UpdateIndexAndCheckComplete() throws IOException, BlockUnavailableException {
         // Wait for all written process complete
 //        try {sleep(5*1000);}
 //        catch (Exception e) {}
         while (true) {
-            if (blockWriteThread.incomingWriteBlocks.isEmpty()) {
-                if (blockWriteThread.getState().equals(State.BLOCKED)) {
+            if (writeThread.incomingWriteBlocks.isEmpty()) {
+                if (writeThread.getState().equals(State.BLOCKED)) {
                     break;
                 }
-                if (blockWriteThread.getState().equals(State.WAITING)) {
+                if (writeThread.getState().equals(State.WAITING)) {
                     break;
                 }
             }
@@ -353,13 +368,12 @@ public class PeerDownloadThread extends Thread {
      * return True if success, False if block is not written.
      *
      */
-    private void GetBlockReply_AddQueue(ArrayList<Socket> socket_Array,
-                                        ArrayList<BufferedReader> reader_Array, ArrayList<BufferedWriter> writer_Array) {
+    private void GetBlockReply_AddQueue(ArrayList<Socket> socket_Array) {
         //Process Buffer Reader for each connection we made (after removing disconnected peer), to download from them.
-        ListIterator<BufferedReader> itr = reader_Array.listIterator();
+        ListIterator<BufferedReader> itr = bufferReader_Array.listIterator();
         while (itr.hasNext()) {
             BufferedReader reader = itr.next();
-            int connection_index = reader_Array.indexOf(reader);
+            int connection_index = bufferReader_Array.indexOf(reader);
             // Listen on reply and also Start a thread Write block to local
             try {
                 // 1. call singleBlockRequest() first to request file.
@@ -377,7 +391,7 @@ public class PeerDownloadThread extends Thread {
                 curPeerCount -= 1;
                 itr.remove();
                 socket_Array.remove(connection_index);
-                writer_Array.remove(connection_index);
+                bufferWriter_Array.remove(connection_index);
                 return;
             }
             catch (JsonSerializationException e) {
@@ -456,7 +470,6 @@ public class PeerDownloadThread extends Thread {
         // get an array of available resources
         IndexElement[] sources = lookupReply.hits;
         tgui.logInfo("Get File Sources Success!");
-        connection.shutdown();  // shutdown connection with Server
         return sources;
     }
 
@@ -470,8 +483,6 @@ public class PeerDownloadThread extends Thread {
         try {
             // Send Finish GoodBye Signal
             writeMsg(bufferedWriter,new Goodbye());
-            // receive GoodBye Signal
-            Goodbye gb = (Goodbye) readMsg(bufferedReader);
             // close the socket
             socket.close();
         } catch (Exception e1) {

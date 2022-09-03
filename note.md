@@ -1,3 +1,32 @@
+## Current Progress
+
+Finally! Managed to did it.
+
+- Drawbacks: need large socket timeout limit
+- Adavantage: 
+  1. can recover from any peer failure when downloading.
+  2. For `maxPeer`, is the maximum concurrent connection user defined.
+  3. if `maxPeer` == 3, we make 3 connections to 3 peers, then
+  4. send ONLY one blockRequest for each connection, to each 3 peer, check peer failure,
+     1. if peer fails, we remove from our 3 connections.
+  5. get a single blockReply for each connection from 3 peers and pass them into a queue `singleBlockWriter`
+     1. in the background, our new thread, `WriteBlockThread` will write all incoming blocks to local.
+  6. at this stage, we finish 1. send request, 2. receive block reply, 3. have an ongoing thread writing blocks.
+  7. wait untill write thread finish.
+  8. check if we have all files
+  9. if we still miss files (including broken connection with previous peers)
+  10. go back to step 3:
+      1. if we lost some connections before:
+         1. (make connection to idx server)
+         2. query and update resources (to get update if peer changes)
+         3. go back to step 3, use new resources, make more connections
+      2. if we not lose any connections, go back to step 3, do not update sources list,
+      3. continue send request for next block. (step 3 onwards)
+  
+### Next:
+- solve goodbye message problem.
+- maybe buffer size reduce.
+
 ## TO DO
 1. use `getLocalTempFile` to load/create a downloading local file,
    - then, get needed blocks into an array `neededBlocks`,
