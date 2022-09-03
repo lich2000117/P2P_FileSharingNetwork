@@ -58,7 +58,7 @@ public class PeerUploadThread extends Thread {
         while(!isInterrupted()) {
             try {
                 Socket socket = incomingConnections.take();
-                socket.setSoTimeout(10*1000);
+                socket.setSoTimeout(20*1000);
                 ProcessPeerRequest(socket);
                 socket.close();
             } catch (InterruptedException e) {
@@ -106,7 +106,7 @@ public class PeerUploadThread extends Thread {
             return;
         }
         catch (SocketTimeoutException e){
-            tgui.logError("Upload Peer Socket Timeout");
+            tgui.logWarn("Upload Peer Socket Timeout");
             return;
         }
         // 1. Continuously get a message with block info
@@ -139,7 +139,7 @@ public class PeerUploadThread extends Thread {
                 return;
             }
             catch (SocketTimeoutException e){
-                tgui.logError("Upload Peer Socket Timeout");
+                tgui.logWarn("Upload Peer Socket Timeout");
                 return;
             }
         }

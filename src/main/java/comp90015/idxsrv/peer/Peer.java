@@ -62,18 +62,28 @@ public class Peer implements IPeer {
 			String shareSecret) {
 		// Check if file in base dir
 		if (! file.getParent().contains(basedir)){tgui.logWarn("Sharing File Not in Base Directory!"); return;}
+		FileMgr fileMgr;
+		String relativePathName;
+		String filePath;
+		// FileMgr load local file, Load before sending connection to ensure no timeout.
+		try{
 
+			filePath = file.getPath();
+			relativePathName = new File(basedir).toURI().relativize(new File(filePath).toURI()).getPath();
+			fileMgr = new FileMgr(filePath);
+		} catch (NoSuchAlgorithmException e) {
+			tgui.logError("No such Algorithm! Cannot use FileMgr to create local file.");
+			return;
+		} catch (IOException e) {
+			tgui.logError("IO operation failed! Cannot use FileMgr to create local file.");
+			return;
+		}
 		// try to establish connection and handshake with idx server.
 		ConnectServer connection = new ConnectServer(this.tgui);
 		if (!connection.MakeConnection(idxAddress, idxPort, idxSecret)) return;
 
 		// create and send request to share with idx server
 		try{
-			// FileMgr load local file
-			String filePath = file.getPath();
-			String relativePathName = new File(basedir).toURI().relativize(new File(filePath).toURI()).getPath();
-			FileMgr fileMgr = new FileMgr(filePath);
-
 			// send request
 			connection.sendRequest(new ShareRequest(fileMgr.getFileDescr(), relativePathName, shareSecret, this.port));
 
@@ -96,9 +106,6 @@ public class Peer implements IPeer {
 			return;
 		} catch (JsonSerializationException e) {
 			tgui.logError("JsonSerializationException");
-			return;
-		} catch (NoSuchAlgorithmException e) {
-			tgui.logError("NoSuchAlgorithmException");
 			return;
 		} catch (IOException e) {
 			tgui.logError("IO operation failed! Abort");

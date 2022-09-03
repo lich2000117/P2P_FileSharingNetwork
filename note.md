@@ -49,6 +49,9 @@ Peer upload node: check HashMap (MD5) == sharesecret
 
 ### Process of Connection:
 
+### Why need Timeout?
+to make sure we do enough calculation, processes before we connect to other peers, save public resources.
+
 #### VirtualBox Multiple VMs network set up:
 https://www.youtube.com/watch?v=vReAkOq-59I
 
