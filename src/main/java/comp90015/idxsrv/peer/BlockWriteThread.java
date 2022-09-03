@@ -11,10 +11,9 @@ import java.util.concurrent.LinkedBlockingDeque;
 
 public class BlockWriteThread extends Thread {
     private ISharerGUI tgui;
-    private LinkedBlockingDeque<BlockReply> incomingWriteBlocks;
+    public LinkedBlockingDeque<BlockReply> incomingWriteBlocks;
     private FileMgr tempFile;
 
-    public boolean isIdle = true; // flag variable to indicate if this thread is complete
     /**
      * Create a Peer Download Thread, which attempts to the bind to the provided
      * port with a server socket. The thread must be explicitly started.
@@ -41,12 +40,6 @@ public class BlockWriteThread extends Thread {
                 }// if download failed, return and print error message
                 else {
                     tgui.logWarn("Can not write block.");
-                }
-                if (incomingWriteBlocks.isEmpty()) {
-                    isIdle = true;
-                }
-                else {
-                    isIdle = false;
                 }
             } catch (InterruptedException e) {
                 tgui.logWarn("Writer Thread interrupted.");

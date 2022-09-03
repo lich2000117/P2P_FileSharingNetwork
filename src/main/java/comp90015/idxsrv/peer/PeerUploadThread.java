@@ -14,7 +14,6 @@ import comp90015.idxsrv.filemgr.BlockUnavailableException;
 import comp90015.idxsrv.filemgr.FileMgr;
 import comp90015.idxsrv.message.*;
 import comp90015.idxsrv.server.IOThread;
-import comp90015.idxsrv.server.IndexElement;
 import comp90015.idxsrv.textgui.ISharerGUI;
 
 /**
@@ -58,8 +57,8 @@ public class PeerUploadThread extends Thread {
         while(!isInterrupted()) {
             try {
                 Socket socket = incomingConnections.take();
-                socket.setSoTimeout(20*1000);
-                ProcessPeerRequest(socket);
+                socket.setSoTimeout(10*1000);
+                ProcessBlockRequest(socket);
                 socket.close();
             } catch (InterruptedException e) {
 
@@ -84,7 +83,7 @@ public class PeerUploadThread extends Thread {
 
 
 
-    private void ProcessPeerRequest(Socket socket) throws IOException {
+    private void ProcessBlockRequest(Socket socket) throws IOException {
         String ip=socket.getInetAddress().getHostAddress();
         int port=socket.getPort();
         tgui.logInfo("Client Upload processing request on connection "+ip);
@@ -120,7 +119,7 @@ public class PeerUploadThread extends Thread {
              */
 
             try {
-                ProcessPeerRequest(bufferedWriter, blockRequest, ip, port);
+                ProcessBlockRequest(bufferedWriter, blockRequest, ip, port);
             } catch (IOException ioE) {
                 tgui.logError("Couldn't read local file to share with others");
             } catch (NoSuchAlgorithmException e) {
@@ -168,7 +167,7 @@ public class PeerUploadThread extends Thread {
     /*
      * Methods to process each of the possible requests.
      */
-    private void ProcessPeerRequest(BufferedWriter bufferedWriter, BlockRequest msg, String ip, int port) throws IOException, NoSuchAlgorithmException {
+    private void ProcessBlockRequest(BufferedWriter bufferedWriter, BlockRequest msg, String ip, int port) throws IOException, NoSuchAlgorithmException {
 
         FileMgr fileMgr = new FileMgr(msg.filename);
 
