@@ -49,7 +49,7 @@ public class FileDescr {
 	public FileDescr(RandomAccessFile file) throws IOException, NoSuchAlgorithmException {
 		fileLength = file.length();
 		blockLength=16*1024*1024;
-		numBlocks = (int)Math.ceil((float)fileLength/blockLength);
+		numBlocks = (int)(fileLength/blockLength + (fileLength%blockLength>0?1:0));
 		if(fileLength==0) return;
 		init(file);
 	}
