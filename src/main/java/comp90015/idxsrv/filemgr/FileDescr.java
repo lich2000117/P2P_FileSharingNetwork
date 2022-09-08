@@ -76,7 +76,7 @@ public class FileDescr {
 		MessageDigest blockDigest = MessageDigest.getInstance("MD5");
 		for(int b = 0; b < numBlocks; b+=1) {
 			int numBytes = getNumBlockBytes(b);
-			int blockOffset = getBlockOffset(b);
+			long blockOffset = getBlockOffset(b);
 			byte[] blockBytes = new byte[(int)numBytes];
 			file.seek(blockOffset);
 			file.readFully(blockBytes,0,numBytes);
@@ -133,8 +133,8 @@ public class FileDescr {
 	 * @param blockIdx the index of the block, which must be less than the number of blocks
 	 * @return the block's offset
 	 */
-	public int getBlockOffset(int blockIdx) {
-		if(blockIdx<numBlocks) return blockIdx*blockLength;
+	public long getBlockOffset(int blockIdx) {
+		if(blockIdx<numBlocks) return ((long)blockIdx)*blockLength;
 		throw new InvalidBlockIndexException();
 	}
 	
