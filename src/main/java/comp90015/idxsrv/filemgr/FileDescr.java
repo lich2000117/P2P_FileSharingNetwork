@@ -65,7 +65,7 @@ public class FileDescr {
 	public FileDescr(RandomAccessFile file, int blockLength) throws NoSuchAlgorithmException, IOException {
 		fileLength = file.length();
 		this.blockLength=blockLength;
-		numBlocks = (int)Math.ceil((float)fileLength/blockLength);
+		numBlocks = (int)(fileLength/blockLength + (fileLength%blockLength>0?1:0));
 		if(fileLength==0) return;
 		init(file);
 	}
@@ -121,7 +121,7 @@ public class FileDescr {
 	 */
 	public int getNumBlockBytes(int blockIdx) {
 		if(blockIdx<numBlocks) {
-			return (int) Math.min(blockLength,fileLength - blockIdx*blockLength);
+			return (int) Math.min(blockLength,fileLength - ((long)blockIdx)*blockLength);
 		} else {
 			throw new InvalidBlockIndexException();
 		}
