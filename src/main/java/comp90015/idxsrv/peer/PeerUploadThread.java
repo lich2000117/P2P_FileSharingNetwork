@@ -57,12 +57,14 @@ public class PeerUploadThread extends Thread {
         while(!isInterrupted()) {
             try {
                 Socket socket = incomingConnections.take();
+                //socket.setSoTimeout(2*1000);
                 socket.setSoTimeout(3*1000);
-                ProcessBlockRequest(socket);
-            } catch (InterruptedException | IOException e) {
-
+                SendBlockReply(socket);
+            } catch (InterruptedException e) {
                 tgui.logWarn("Peer Upload thread interrupted.");
                 break;
+            } catch (IOException e) {
+                tgui.logWarn("Error when uploading blocks, skip uploading, keep listening.");
             } catch (Exception e) {
                 tgui.logWarn("Socket has been closed!");
             }
@@ -81,7 +83,7 @@ public class PeerUploadThread extends Thread {
 
 
 
-    private void ProcessBlockRequest(Socket socket) throws IOException {
+    private void SendBlockReply(Socket socket) throws IOException {
         String ip=socket.getInetAddress().getHostAddress();
         int port=socket.getPort();
         tgui.logInfo("Client Upload processing request on connection "+ip);
@@ -117,9 +119,10 @@ public class PeerUploadThread extends Thread {
              */
 
             try {
-                ProcessBlockRequest(bufferedWriter, blockRequest, ip, port);
+                SendBlockReply(bufferedWriter, blockRequest, ip, port);
             } catch (IOException ioE) {
-                tgui.logError("Couldn't read local file to share with others");
+                tgui.logWarn("Couldn't send block reply with others");
+                return;
             } catch (NoSuchAlgorithmException e) {
                 e.printStackTrace();
                 tgui.logError("No such Algorithm");
@@ -165,7 +168,7 @@ public class PeerUploadThread extends Thread {
     /*
      * Methods to process each of the possible requests.
      */
-    private void ProcessBlockRequest(BufferedWriter bufferedWriter, BlockRequest msg, String ip, int port) throws IOException, NoSuchAlgorithmException {
+    private void SendBlockReply(BufferedWriter bufferedWriter, BlockRequest msg, String ip, int port) throws IOException, NoSuchAlgorithmException {
 
         FileMgr fileMgr = new FileMgr(msg.filename);
 

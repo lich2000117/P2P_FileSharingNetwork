@@ -200,10 +200,10 @@ public class Peer implements IPeer {
 		// create a thread to ask for download and make it run.
 		PeerDownloadThread downloadThread;
 		try {
-			downloadThread = new PeerDownloadThread(relativePathname, searchRecord, connection, tgui);
+			downloadThread = new PeerDownloadThread(relativePathname, searchRecord, connection, tgui, timeout);
 		} catch (IOException e) {
 			tgui.logError("Downloading Thread Failed!");
-			throw new RuntimeException(e);
+			return;
 		}
 		downloadThread.start();
 	}
