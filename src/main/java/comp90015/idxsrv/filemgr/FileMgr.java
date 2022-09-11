@@ -108,7 +108,7 @@ public class FileMgr {
 	 */
 	public boolean writeBlock(int blockIdx, byte[] blockBytes) throws IOException {
 		if(blocksRequired.contains(blockIdx) && checkBlockHash(blockIdx,blockBytes)) {
-			int offset = fileDescr.getBlockOffset(blockIdx);
+			long offset = fileDescr.getBlockOffset(blockIdx);
 			file.seek(offset);
 			file.write(blockBytes,0,blockBytes.length);
 			blocksRequired.remove(blockIdx);
@@ -121,7 +121,7 @@ public class FileMgr {
 	
 	private byte[] _readBlock(int blockIdx) throws IOException {
 		int numBytes = fileDescr.getNumBlockBytes(blockIdx);
-		int offset = fileDescr.getBlockOffset(blockIdx);
+		long offset = fileDescr.getBlockOffset(blockIdx);
 		byte[] blockBytes = new byte[(int)numBytes];
 		file.seek(offset);
 		file.readFully(blockBytes,0,numBytes);
