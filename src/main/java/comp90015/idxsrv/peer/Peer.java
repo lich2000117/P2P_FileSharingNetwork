@@ -19,13 +19,13 @@ import comp90015.idxsrv.textgui.ISharerGUI;
  */
 public class Peer implements IPeer {
 
+	public HashSet<String> sharingFileNames = new HashSet<String>();
 	private IOThread ioThread;
 	private PeerUpload_IOThread peerUploadIOThread;
 
 	private LinkedBlockingDeque<Socket> incomingConnections;
 
 	private ISharerGUI tgui;
-	public HashSet<String> sharingFileNames = new HashSet<String>(); // available to peerUploadThread to determine if file is available.
 	private String basedir;
 
 	private int timeout;
@@ -40,7 +40,7 @@ public class Peer implements IPeer {
 		this.incomingConnections = new LinkedBlockingDeque<Socket>();
 		ioThread = new IOThread(port,incomingConnections,socketTimeout,tgui);
 		ioThread.start();
-		peerUploadIOThread = new PeerUpload_IOThread(this, port,incomingConnections,socketTimeout,tgui, ioThread);
+		peerUploadIOThread = new PeerUpload_IOThread(this, incomingConnections,tgui, ioThread);
 		peerUploadIOThread.start();
 	}
 
@@ -92,11 +92,10 @@ public class Peer implements IPeer {
 			DropShareReply dropShareReply = (DropShareReply) msg_back;
 			if (!dropShareReply.success) { tgui.logError("Server failed to drop the record"); return false;}
 
-			//remove from sharing list
-			sharingFileNames.remove(relativePathname);
 			connection.shutdown();
 			shareRecord.fileMgr.closeFile();
 			tgui.logInfo("Drop file success!");
+			this.sharingFileNames.remove(relativePathname);
 			return true;
 		}
 		catch (Exception e) {

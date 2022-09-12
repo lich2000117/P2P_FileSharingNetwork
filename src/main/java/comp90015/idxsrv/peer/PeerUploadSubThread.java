@@ -21,6 +21,7 @@ import java.util.Base64;
 public class PeerUploadSubThread extends Thread {
     private final Socket socket;
     private ISharerGUI tgui;
+    private final Peer peer;
 
     /**
      * Create a Peer Download Thread, which attempts to the bind to the provided
@@ -29,7 +30,8 @@ public class PeerUploadSubThread extends Thread {
      * @param tgui an object that implements the terminal logger interface
      * @throws IOException
      */
-    public PeerUploadSubThread(Socket socket, ISharerGUI tgui) {
+    public PeerUploadSubThread(Peer peer, Socket socket, ISharerGUI tgui) {
+        this.peer = peer        ;
         this.socket = socket;
         this.tgui = tgui;
     }
@@ -37,19 +39,15 @@ public class PeerUploadSubThread extends Thread {
     @Override
     public void run() {
         tgui.logInfo("New Thread Trying to Upload TO: " + socket.getInetAddress());
-        while(!isInterrupted()) {
-            if (StartUpload(socket)){
-                tgui.logInfo("Successfully Upload File to Peer: " + socket.getInetAddress());
-                tgui.logInfo("Upload thread completed.");
-                return;
-            }
-            // if download failed, return and print error message
-            else {
-                tgui.logWarn("Cannot Upload File to Peer: " + socket.getInetAddress());
-                tgui.logInfo("Upload thread completed.");
-                return;
-            }
+        if (StartUpload(socket)){
+            tgui.logInfo("Successfully Upload File to Peer: " + socket.getInetAddress());
         }
+        // if download failed, return and print error message
+        else {
+            tgui.logWarn("Cannot Upload File to Peer: " + socket.getInetAddress());
+        }
+        tgui.logInfo("Upload sub thread completed.");
+        return;
     }
 
 
@@ -59,6 +57,7 @@ public class PeerUploadSubThread extends Thread {
      * @throws IOException
      */
     private boolean StartUpload(Socket socket){
+
         // initialise connection set up
         String ip=socket.getInetAddress().getHostAddress();
         int port=socket.getPort();
@@ -78,24 +77,30 @@ public class PeerUploadSubThread extends Thread {
             try {
                 msg = readMsg(bufferedReader);
             } catch (JsonSerializationException e1) {
-                writeMsg(bufferedWriter, new ErrorMsg("Invalid message"));
+                tgui.logWarn("Invalid message, JsonSerialisation...");
                 return false;
             } catch (SocketTimeoutException e) {
                 tgui.logWarn("Upload Peer Socket Timeout");
                 return false;
             }
+            catch (IOException e){
+                tgui.logError(e.getMessage());
+                tgui.logWarn("IO Exception encountered when reading first block message");
+                return false;
+            }
             // 1. Check if message is a request and Continuously get a message with block info
-            while (msg.getClass().getName().equals(BlockRequest.class.getName())) {
-                BlockRequest blockRequest;
+            BlockRequest blockRequest;
+            FileMgr fileMgr = null;
+            while (msg.getClass().getName()==BlockRequest.class.getName()) {
                 blockRequest = (BlockRequest) msg;
-
                 /* 2
                  * Now process our block request. This is a single-request-per-connection
                  * protocol.
                  */
 
                 try {
-                    if (!ProcessBlockRequests(bufferedWriter, blockRequest, ip, port)) {
+                    fileMgr = new FileMgr(blockRequest.filename);
+                    if (!ProcessBlockRequests(peer, fileMgr, bufferedWriter, blockRequest)) {
                         tgui.logWarn("Terminate connection with Peer: " + ip);
                         return false;
                     }
@@ -104,6 +109,8 @@ public class PeerUploadSubThread extends Thread {
                 } catch (NoSuchAlgorithmException e) {
                     tgui.logError("No such Algorithm, Terminate connection.");
                     return false;
+                } catch (Exception e) {
+                    tgui.logWarn("Current Block Upload error, skip to next");
                 }
                 /* 2
                  * Get Another message
@@ -111,18 +118,21 @@ public class PeerUploadSubThread extends Thread {
                 try {
                     msg = readMsg(bufferedReader);
                 } catch (JsonSerializationException e1) {
-                    writeMsg(bufferedWriter, new ErrorMsg("Invalid message"));
-                    tgui.logWarn("Terminate connection with Peer: " + ip);
+                    tgui.logWarn("Invalid message Terminate connection with Peer: " + ip);
                     return false;
                 } catch (SocketTimeoutException e) {
                     tgui.logWarn("Upload Peer Socket Timeout");
                     tgui.logWarn("Terminate connection with Peer: " + ip);
                     return false;
                 }
+                catch (IOException e){
+                    tgui.logWarn("IO Exception encountered when reading block message");
+                    return false;
+                }
             }
-
+            if (fileMgr!=null) fileMgr.closeFile();
             // at this stage, the message type is not block request, it should be Goodbye message
-            if (!(msg.getClass().getName().equals(Goodbye.class.getName()))) {
+            if (!(msg.getClass().getName() == (Goodbye.class.getName()))) {
                 writeMsg(bufferedWriter, new ErrorMsg("Invalid Message!"));
                 return false;
             }
@@ -139,38 +149,36 @@ public class PeerUploadSubThread extends Thread {
     /*
      * Methods to process each of the possible block requests and send block back.
      */
-    private boolean ProcessBlockRequests(BufferedWriter bufferedWriter, BlockRequest msg, String ip, int port) throws IOException, NoSuchAlgorithmException {
+    private boolean ProcessBlockRequests(Peer peer, FileMgr fileMgr, BufferedWriter bufferedWriter, BlockRequest msg)
+                        throws NoSuchAlgorithmException, IOException, Exception {
 
         // Check if the file requested is in our sharing list.
-        // Skipped since we are not required to handle shutdown of process.
-//        if (! peer.sharingFileNames.contains(msg.filename)){
-//            tgui.logWarn("The file requested is not for share. File Name: " + msg.filename);
-//            return false;
-//        }
-
-        // load local file
-        FileMgr fileMgr = new FileMgr(msg.filename);
-
-        // check if sharing file the same as requested file using MD5.
-        if (!(fileMgr.getFileDescr().getBlockMd5(msg.blockIdx).equals(msg.fileMd5))) {
-            writeMsg(bufferedWriter,new ErrorMsg(msg.filename + " ] " +fileMgr.getFileDescr().getBlockMd5(msg.blockIdx) + "  Versus:  " + msg.fileMd5 + " **File Block ready unmatch what it supposed to send! It should be the same.**"));
-            fileMgr.closeFile();
-            tgui.logWarn("MD5 check failed for file. File Name: " + msg.filename);
+        if (! peer.sharingFileNames.contains(msg.filename)){
+            tgui.logWarn("The file requested is no longer for share. File Name: " + msg.filename);
             return false;
         }
 
+        int blockidx = msg.blockIdx;
+        // check if sharing file the same as requested file using MD5.
+        if (!(fileMgr.getFileDescr().getBlockMd5(blockidx).equals(msg.fileMd5))) {
+            writeMsg(bufferedWriter,new ErrorMsg(msg.filename + " ] " +fileMgr.getFileDescr().getBlockMd5(blockidx) + "  Versus:  " + msg.fileMd5 + " **File Block ready unmatch what it supposed to send! It should be the same.**"));
+            tgui.logWarn("MD5 check failed for file. File Name: " + msg.filename);
+            return false;
+        }
         // access local block file and send blockReply
-        if (fileMgr.isBlockAvailable(msg.blockIdx)) {
+        if (fileMgr.isBlockAvailable(blockidx)) {
             try {
-                byte[] data = fileMgr.readBlock(msg.blockIdx);
-                writeMsg(bufferedWriter,new BlockReply(msg.filename, fileMgr.getFileDescr().getFileMd5(), msg.blockIdx, Base64.getEncoder().encodeToString(data)));
+                byte[] data = fileMgr.readBlock(blockidx);
+                String c_d = Base64.getEncoder().encodeToString(data);
+                BlockReply bp = new BlockReply(msg.filename, fileMgr.getFileDescr().getFileMd5(), blockidx, c_d);
+                writeMsg(bufferedWriter, bp);
             }
             catch (BlockUnavailableException e) {
                 writeMsg(bufferedWriter,new ErrorMsg("Block is not available!"));
             }
+            catch (OutOfMemoryError ignored) {}
         }
-        tgui.logInfo("Peer Server Send File successfully!");
-        fileMgr.closeFile();
+        tgui.logInfo("sent Block: " + blockidx);
         return true;
     }
 
@@ -180,7 +188,7 @@ public class PeerUploadSubThread extends Thread {
      */
 
     private void writeMsg(BufferedWriter bufferedWriter, Message msg) throws IOException {
-        tgui.logDebug("sending: "+msg.toString());
+        //tgui.logDebug("sending: "+msg.toString());
         bufferedWriter.write(msg.toString());
         bufferedWriter.newLine();
         bufferedWriter.flush();
@@ -190,7 +198,7 @@ public class PeerUploadSubThread extends Thread {
         String jsonStr = bufferedReader.readLine();
         if(jsonStr!=null) {
             Message msg = (Message) MessageFactory.deserialize(jsonStr);
-            tgui.logDebug("received: "+msg.toString());
+            //tgui.logDebug("received: "+msg.toString());
             return msg;
         } else {
             throw new IOException();

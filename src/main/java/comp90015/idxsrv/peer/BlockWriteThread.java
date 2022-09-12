@@ -42,7 +42,7 @@ public class BlockWriteThread extends Thread {
             try {
                 msg = incomingWriteBlocks.take();
                 if (SingleBlockWrite(tempFile, msg)) {
-                    tgui.logInfo("Block written successful.");
+                    //tgui.logInfo("Block written successful.");
                 }// if download failed, return and print error message
                 else {
                     tgui.logWarn("Can not write block.");
@@ -69,9 +69,9 @@ public class BlockWriteThread extends Thread {
 
             // 6. Write to Local File's block with FileMgr
             if (tempFile.writeBlock(blockIdx, receivedData)) {
-                tgui.logInfo("Received Block written to File!");
+                tgui.logInfo("Received Block " + blockIdx);
             } else {
-                tgui.logError("Received Block Not written to File!");
+                tgui.logError("Received Block " + blockIdx);
                 return false;
             }
         }

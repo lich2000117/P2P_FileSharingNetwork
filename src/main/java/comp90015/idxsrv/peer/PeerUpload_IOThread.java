@@ -23,27 +23,21 @@ import comp90015.idxsrv.textgui.ISharerGUI;
  * @author Chenghao Li
  */
 public class PeerUpload_IOThread extends Thread {
+    private final Peer peer;
     private LinkedBlockingDeque<Socket> incomingConnections;
     private ISharerGUI tgui;
-    private int timeout;
     private IOThread ioThread;
-    private Peer peer;
     /**
      * Create a Peer IOThread, which attempts to the bind to the provided
      * port with a server socket. The thread must be explicitly started.
      * Also it process the incoming request in socket
-     * @param port the port for the server socket
      * @param incomingConnections the blocking queue to put incoming connections
-     * @param timeout the timeout value to be set on incoming connections
      * @param logger an object that implements the terminal logger interface
      */
-    public PeerUpload_IOThread(Peer peer, int port,
-                               LinkedBlockingDeque<Socket> incomingConnections,
-                               int timeout,
+    public PeerUpload_IOThread(Peer peer, LinkedBlockingDeque<Socket> incomingConnections,
                                ISharerGUI logger,
                                IOThread ioThread) {
         this.peer = peer;
-        this.timeout = timeout;
         this.tgui = logger;
         this.incomingConnections=incomingConnections;
         this.ioThread = ioThread;
@@ -51,14 +45,15 @@ public class PeerUpload_IOThread extends Thread {
 
     @Override
     public void run() {
-        tgui.logInfo("Peer IO thread running");
+        tgui.logInfo("Peer Upload IO thread running");
         while(!isInterrupted()) {
             try {
                 Socket socket = incomingConnections.take();
                 //socket.setSoTimeout(timeout);
                 socket.setSoTimeout(10*1000);
                 // Create a sub-thread for this particular socket.
-                new PeerUploadSubThread(socket, tgui).start();;
+                PeerUploadSubThread subThread = new PeerUploadSubThread(peer, socket, tgui);
+                subThread.start();
             } catch (InterruptedException e) {
                 tgui.logWarn("Peer Upload thread interrupted.");
                 break;
@@ -78,9 +73,4 @@ public class PeerUpload_IOThread extends Thread {
         }
         tgui.logInfo("Peer Upload thread thread completed.");
     }
-
-
-
-
-
 }

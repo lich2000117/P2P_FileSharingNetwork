@@ -8,6 +8,7 @@ import comp90015.idxsrv.textgui.ISharerGUI;
 
 import java.io.*;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -36,7 +37,8 @@ public class PeerDownloadThread extends Thread {
     // to iterate blocks index
     private ArrayList<Integer> neededIndex_Array;
     // to Store Connections
-    private int MAX_RETRY_TIME = 3;
+    private int MAX_RETRY_TIME = 5;
+    private int MAX_BLOCKS_PER_CONNECTION = 5; // set how many blocks can be downloaded in a single connection.
     private int curPeerCount = 0;
 
 
@@ -60,19 +62,17 @@ public class PeerDownloadThread extends Thread {
     @Override
     public void run() {
         tgui.logInfo("Downloading thread running");
-        while(!isInterrupted()) {
-            // ask for every peer to send their blocks, if all file success, success and shutdown this thread.
-            if (downloadFileFromPeers(relativePathname, searchRecord, connection)){
-                tgui.logInfo("Successfully download ALL blocks!");
-                return;
-            }
-            // if download failed, return and print error message
-            else {
-                tgui.logWarn("Can not download file: " + relativePathname + " not enough resources out there.");
-                return;
-            }
+        // ask for every peer to send their blocks, if all file success, success and shutdown this thread.
+        if (downloadFileFromPeers(relativePathname, searchRecord, connection)){
+            tgui.logInfo("Downloading thread completed.");
+            return;
         }
-        tgui.logInfo("Downloading thread completed.");
+        // if download failed, return and print error message
+        else {
+            tgui.logWarn("Can not download file: " + relativePathname + " not enough resources out there.");
+            tgui.logInfo("Downloading thread completed.");
+            return;
+        }
     }
 
     private boolean downloadFileFromPeers(String relativePathname, SearchRecord searchRecord, ConnectServer connection) {
@@ -121,6 +121,7 @@ public class PeerDownloadThread extends Thread {
         int retry_times = 0; // current number of retry for the whole process
         int index_sources = 0;
         neededIndex_Array = new ArrayList<>(remainedBlocksIdx);
+        Collections.shuffle(neededIndex_Array);
 
         while (retry_times < MAX_RETRY_TIME) {
 
@@ -137,12 +138,32 @@ public class PeerDownloadThread extends Thread {
                         // Step 5. move on to next block
                         this.cur_BlockArrayIndex += 1;
                         sleep(200); // to avoid overloading the thread.
+                        // if reach our limit, break the connection
+                        if (this.cur_BlockArrayIndex > MAX_BLOCKS_PER_CONNECTION) {
+                            tgui.logInfo("Reach limit, create new connections.");
+                            tgui.logInfo("Number of Blocks remaining: " + (neededIndex_Array.size() - cur_BlockArrayIndex));
+                            index_sources -= 1;
+                            try {
+                                GoodByeToPeer(socket, bufferedReader, bufferedWriter);
+                                bufferedWriter.close();
+                                bufferedReader.close();
+                                socket.close();
+                            } catch (Exception e) {
+                                tgui.logWarn("Upload Peer timed out before we say goodbye When changing connections.");
+                            }
+                            break;
+                        }
 
-                    } catch (Exception e) {
-                        // if other exception happens, abort following block requests, try other peers
-                        tgui.logError(e.getMessage());
-                        tgui.logInfo("An error occurs on current block download, move on to next block.");
+                    } catch (SocketTimeoutException e){
+                        // if other exception happens, abort current block requests, try next block
+                        tgui.logInfo("Lost connection on current Peer, Recovery now...");
                         break;
+                    }
+                    catch (Exception e) {
+                        // if other exception happens, abort current block requests, try next block
+                        tgui.logInfo("An error occurs on current block download, move on to next block.");
+                        this.cur_BlockArrayIndex += 1;
+                        continue;
                     }
                 }
             }
@@ -166,7 +187,7 @@ public class PeerDownloadThread extends Thread {
                 */
                 else {
                     if (retry_times >= MAX_RETRY_TIME) {
-                        tgui.logError("Run out of resources, cannot download. Retried: " + retry_times + " times.");
+                        tgui.logError("Failed! Run out of resources. Retried: " + retry_times + " times.");
                         return false;
                     }
                     // try next available resources
@@ -183,18 +204,18 @@ public class PeerDownloadThread extends Thread {
                             if (sources.length == 0) {tgui.logWarn("No Available Sources, Retry");}
                         }
                         // reset all current connection
+                        tgui.logInfo("Retry Connection for " + retry_times + " times.");
                         retry_times += 1; // keep track of our retry times
                         index_sources = 0; // reset which resource taken from resources.
-                        try {socket.close();} catch (IOException ignored){} // if there's still connection, close it.
+                        try {bufferedWriter.close();bufferedReader.close();socket.close();} catch (IOException ignored){} // if there's still connection, close it.
                     }
                 }
             } catch (Exception e) {
-                System.out.println(e);
                 tgui.logError("Error when checking if file finished and close socket");
                 return false;
             }
         }
-        tgui.logError("Reached maximum retry times, cannot download.");
+        tgui.logError("Reached maximum retry times, cannot download. Tried times: " + retry_times);
         return false;
 
     }
@@ -239,9 +260,10 @@ public class PeerDownloadThread extends Thread {
 
     private void ReliefWriteThread() {
         while (writeThread.incomingWriteBlocks.size() > 5){
+            System.out.println("Waiting for blocks writing thread to finish");
             tgui.logInfo("Waiting for blocks writing thread to finish");
             try {
-                sleep(200);
+                sleep(100);
             }
             catch (InterruptedException e){
                 tgui.logError("Sleep been interrupted");
@@ -262,7 +284,7 @@ public class PeerDownloadThread extends Thread {
         /* Connect to Peer */
         // try to establish connection and handshake with peer server.
         try {
-            tgui.logInfo("Trying to Establish connection to Peer: " + ie.ip + " Please wait for timeout = 10 seconds");
+            tgui.logInfo("Connecting to Peer: " + ie.ip + ", timeout = " + 10 + " seconds");
             socket = new Socket(ie.ip, ie.port);
             socket.setSoTimeout(10*1000); // 15 seconds read operation timeout.
             //socket.setSoTimeout(this.timeout);
@@ -271,7 +293,7 @@ public class PeerDownloadThread extends Thread {
             // initialise input and outputStream
             this.bufferedReader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
             this.bufferedWriter = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
-            tgui.logInfo("Connected to Peer: " + ie.ip + " : " + ie.port);
+            tgui.logInfo("Connected!");
             //System.out.println("Add another connection");
             curPeerCount += 1;
         } catch (Exception e) {
@@ -323,7 +345,7 @@ public class PeerDownloadThread extends Thread {
         // reset params
 
         remainedBlocksIdx.clear();
-        cur_BlockArrayIndex = 0;
+        this.cur_BlockArrayIndex = 0;
         getNeededBlockIdx(tempFile, totalN, remainedBlocksIdx);
         // check if we have all local files, no need to download
         if (remainedBlocksIdx.size() == 0){tgui.logInfo("Local File exists, no need to download");
@@ -331,6 +353,7 @@ public class PeerDownloadThread extends Thread {
             return true;
         }
         neededIndex_Array = new ArrayList<>(remainedBlocksIdx);
+        Collections.shuffle(neededIndex_Array);
         return false;
     }
 
@@ -460,7 +483,7 @@ public class PeerDownloadThread extends Thread {
      */
 
     private void writeMsg(BufferedWriter bufferedWriter, Message msg) throws IOException {
-        tgui.logDebug("sending: "+msg.toString());
+        //tgui.logDebug("sending: "+msg.toString());
         bufferedWriter.write(msg.toString());
         bufferedWriter.newLine();
         bufferedWriter.flush();
@@ -470,7 +493,7 @@ public class PeerDownloadThread extends Thread {
         String jsonStr = bufferedReader.readLine();
         if(jsonStr!=null) {
             Message msg = (Message) MessageFactory.deserialize(jsonStr);
-            tgui.logDebug("received: "+msg.toString());
+            //tgui.logDebug("received: "+msg.toString());
             return msg;
         } else {
             throw new IOException();

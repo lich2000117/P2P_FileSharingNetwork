@@ -119,10 +119,9 @@ public class PeerShareThread extends Thread {
             ShareRecord newRecord = new ShareRecord(fileMgr, reply.numSharers,"Ready", idxAddress,
                     idxPort, idxSecret, shareSecret);
             tgui.addShareRecord(relativePathName, newRecord);
-            // Add to sharing file list
-            peer.sharingFileNames.add(relativePathName);
             connection.shutdown();
             fileMgr.closeFile();
+            peer.sharingFileNames.add(relativePathName);
             return true;
         }
         catch (FileNotFoundException e) {
