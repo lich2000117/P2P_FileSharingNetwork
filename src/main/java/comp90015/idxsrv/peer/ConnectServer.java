@@ -4,11 +4,16 @@ import comp90015.idxsrv.message.*;
 import comp90015.idxsrv.textgui.ISharerGUI;
 
 import java.io.*;
-import java.net.ConnectException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * This class makes connection to Idx Server and send/receive messages from it.
+ *
+ * @author Chenghao Li
+ *
+ */
 public class ConnectServer {
     private Socket socket;
     private InputStream inputStream;

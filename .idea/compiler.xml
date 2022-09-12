@@ -7,6 +7,7 @@
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
         <module name="idxsrv" />
+        <module name="distributed-system-project-1" />
       </profile>
     </annotationProcessing>
   </component>

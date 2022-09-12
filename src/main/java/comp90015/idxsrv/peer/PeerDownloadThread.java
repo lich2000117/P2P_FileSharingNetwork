@@ -8,7 +8,6 @@ import comp90015.idxsrv.textgui.ISharerGUI;
 
 import java.io.*;
 import java.net.Socket;
-import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -38,11 +37,10 @@ public class PeerDownloadThread extends Thread {
     private ArrayList<Integer> neededIndex_Array;
     // to Store Connections
     private int MAX_RETRY_TIME = 3;
+    private int curPeerCount = 0;
 
 
     private int cur_BlockArrayIndex = 0; // Index of NeededBlockIndex_Array, Not index of Block!
-    private int peerTriedCount = 0; // Number of connections made
-    private int curPeerCount = 0; // Number of connections on going
     private LinkedBlockingDeque<BlockReply> writeQueue = new LinkedBlockingDeque<>();
     /**
      * Create a Peer Download Thread, which attempts to the bind to the provided
@@ -70,7 +68,7 @@ public class PeerDownloadThread extends Thread {
             }
             // if download failed, return and print error message
             else {
-                tgui.logWarn("Can not download file, not enough resources out there.");
+                tgui.logWarn("Can not download file: " + relativePathname + " not enough resources out there.");
                 return;
             }
         }
@@ -78,127 +76,122 @@ public class PeerDownloadThread extends Thread {
     }
 
     private boolean downloadFileFromPeers(String relativePathname, SearchRecord searchRecord, ConnectServer connection) {
-        // Perform Look up to get a list of available resources
-        // create and send request to share with server
 
-        try {
+        // Pre tasks to do
+        // 1. query idx server.
+        // 2. create local file.
+        // 3. initialise write thread.
+        if (!ExecutePreTasks(relativePathname, searchRecord, connection)) return false;
 
-            //get online available sources.
-            sources = getSourcesFromIdx(relativePathname, searchRecord, connection);
-            connection.shutdown();  // shutdown connection with Server
-            if (sources == null) {
-                tgui.logWarn("No Available Sources");
-                return false;
-            }
-
-            /* Load File */
-            // A. Load temp File Create/Open Local unfinished file with FileMgr
-            tempFile = getLocalTempFile(relativePathname, searchRecord);
-            totalN = tempFile.getFileDescr().getNumBlocks();
-            tgui.logInfo("Total Number of Blocks for the File: " + totalN);
-
-            // Thread to Write block
-            writeThread = new BlockWriteThread(tempFile, tgui, writeQueue);
-            writeThread.start();
-
-            // get remained blocks required
-            remainedBlocksIdx = new HashSet<Integer>();
-            if (UpdateIndexAndCheckComplete()) return true;
-            int remainNum = remainedBlocksIdx.size();
-
-            tgui.logInfo("Total Number of Blocks To Download: " + remainNum);
-        } catch (Exception e) {
-            e.printStackTrace();
-            tgui.logError("Download Error Occur! Before connecting to peers");
-            return false;
-        }
-        /* Strategy:
-        Phase 1: Send request out in the wilds
-
-           for every available peer, we try to send a single block request to it,
-           after we finish all request, then Download
-
-        Phase 2: Download from stored reply
-            Use stored Reader to read messages from other peers
-            and Write to local file
+        /*
+        Strategy:
+            Step 0: Set maximum retry times if failure occurs.
+            Step 1: From online resources, build concurrent connections to `maxPeer` amount of peers.
+                  ( Step 2: Send a sginle block request to EVERY connection.
+            Repeat{ Step 3: receive block replies from EVERY connection.
+                  ( Step 4: put block data into @WriteThread to write in the background
+                   ( Step 5: Repeat Step 2,3,4,5 until reach maximum retry times.
+            Step 6: Check local file integrity.
 
         Failure Recover:
+            If a peer dropped connection or timeout:
+                - Continue operation with current reduced number of connections.
+                - Establish new connections to next available resources AFTER Step 5.
+            If no available resources:
+                - Continue operation with current reduced number of connections.
+                - Query index server again AFTER Step 6.
+                - until it reaches maximum retry times.
 
+        NOTE: to deal with memory issue, `maxPeer` has been set to 1 and their corresponding ArrayList has been removed.
         */
 
+        // 0. get remained blocks required
+        try {
+            remainedBlocksIdx = new HashSet<Integer>();
+            // update block index needed hashset and check if local file is complete.
+            if (UpdateIndexAndCheckComplete()) return true;
+            int remainBlocksNum = remainedBlocksIdx.size();
+            tgui.logInfo("Total Number of Blocks To Download: " + remainBlocksNum);
+        } catch (IOException | BlockUnavailableException e) {
+            tgui.logWarn("Blocks are not available. Terminating...");
+            return false;
+        }
 
-        // 1. Make connection to peers, restricted to maxPeer, maximum amount of peers to connect.
-        //while (MakeConnectionToPeers(neededIndex_Array.size(), sources, socket_Array, bufferReader_Array, bufferWriter_Array)) {
-        int retry_times = 0; // number of retry for the whole process
+
+        int retry_times = 0; // current number of retry for the whole process
         int index_sources = 0;
         neededIndex_Array = new ArrayList<>(remainedBlocksIdx);
+
         while (retry_times < MAX_RETRY_TIME) {
+
+            // Step 1. Make connection to peers, restricted to max retry times, maxPeer, maximum amount of peers to connect concurrently.
             if (MakeConnectionToPeer(index_sources)) {
-                //System.out.println(cur_BlockArrayIndex);
-                // keep asking current peer to download block file
+                // Step 2. Keep asking current peer to download block file
                 while (this.cur_BlockArrayIndex < neededIndex_Array.size()) {
-                    // wait for writing queue before we put new one to avoid memory error.
-                    WaitForWriteThread();
+                    ReliefWriteThread(); // If Write thread has too many blocks in queue, let current downloading wait.
                     try {
+                        // Step 3. send request
                         singleBlockRequest(tempFile, neededIndex_Array.get(cur_BlockArrayIndex), bufferedWriter);
-                        GetBlockReply_AddQueue(); // get reply
-                        this.cur_BlockArrayIndex += 1; // move on to next block
-                        sleep(200);
+                        // Step 4. get block reply
+                        GetBlockReply_AddQueue();
+                        // Step 5. move on to next block
+                        this.cur_BlockArrayIndex += 1;
+                        sleep(200); // to avoid overloading the thread.
+
                     } catch (Exception e) {
                         // if other exception happens, abort following block requests, try other peers
                         tgui.logError(e.getMessage());
+                        tgui.logInfo("An error occurs on current block download, move on to next block.");
                         break;
                     }
                 }
-                // if finish all blocks request or aborted due to error, check if we complete file transfer and update needed blocks index
-                try {
-                    // if finish download
-                    if (UpdateIndexAndCheckComplete()) {
-                        tgui.logInfo("All blocks Downloaded!");
-                        // close existing sockets
-                        try {
-                            GoodByeToPeer(socket, bufferedReader, bufferedWriter);
-                        } catch (Exception e) {
-                            tgui.logWarn("Upload Peer timed out before we say goodbye");
-                        }
-                        this.writeThread.interrupt();
-                        return true;
-                    } else {
-                        // if still got blocks remaining
-
-                        if (retry_times >= MAX_RETRY_TIME) {
-                            tgui.logError("Run out of resources, cannot download. Retried: " + retry_times + " times.");
-                            return false;
-                        }
-
-                        // try next available resources
-                        index_sources += 1;
-
-                        // if run out of current resources, try querying idx server for new resources again
-                        if (index_sources >= sources.length) {
-                            retry_times += 1; // add our retry times
-                            index_sources = 0; // reset resources index
-                            try {
-                                socket.close();
-                            }
-                            catch (IOException e){}
-                            //reconnect to idx then query for other resources.
-                            ConnectServer connectionRetry = new ConnectServer(this.tgui);
-                            if (connectionRetry.MakeConnection(searchRecord.idxSrvAddress, searchRecord.idxSrvPort, searchRecord.idxSrvSecret)) {
-                                sources = getSourcesFromIdx(relativePathname, searchRecord, connectionRetry);
-                                connectionRetry.shutdown();
-                                if (sources == null) {
-                                    tgui.logWarn("No Available Sources");
-                                    // continue!!!!
-                                }
-                            }
-                        }
+            }
+            // Step 6. if finish all blocks request or aborted due to error,
+            //          check if we complete file transfer and update needed blocks index
+            try {
+                // if finish download
+                if (UpdateIndexAndCheckComplete()) {
+                    tgui.logInfo("All blocks Downloaded!");
+                    // close existing sockets by sending Goodbye message.
+                    try {
+                        GoodByeToPeer(socket, bufferedReader, bufferedWriter);
+                    } catch (Exception e) {
+                        tgui.logWarn("Upload Peer timed out before we say goodbye");
                     }
-                } catch (Exception e) {
-                    System.out.println(e);
-                    tgui.logError("Error when checking if file finished and close socket");
-                    return false;
+                    this.writeThread.interrupt();
+                    return true;
                 }
+                /*
+                Failure Recovery: if still got blocks remaining, retry
+                */
+                else {
+                    if (retry_times >= MAX_RETRY_TIME) {
+                        tgui.logError("Run out of resources, cannot download. Retried: " + retry_times + " times.");
+                        return false;
+                    }
+                    // try next available resources
+                    index_sources += 1;
+
+                    // if run out of current resources, try querying idx server for new resources again
+                    if (index_sources >= sources.length) {
+                        //reconnect to idx then query for other resources.
+                        ConnectServer connectionRetry = new ConnectServer(this.tgui);
+                        if (connectionRetry.MakeConnection(searchRecord.idxSrvAddress, searchRecord.idxSrvPort, searchRecord.idxSrvSecret)) {
+                            sources = getSourcesFromIdx(relativePathname, searchRecord, connectionRetry);
+                            connectionRetry.shutdown();
+                            if (sources == null) {tgui.logWarn("No Available Sources, Retry");}
+                            if (sources.length == 0) {tgui.logWarn("No Available Sources, Retry");}
+                        }
+                        // reset all current connection
+                        retry_times += 1; // keep track of our retry times
+                        index_sources = 0; // reset which resource taken from resources.
+                        try {socket.close();} catch (IOException ignored){} // if there's still connection, close it.
+                    }
+                }
+            } catch (Exception e) {
+                System.out.println(e);
+                tgui.logError("Error when checking if file finished and close socket");
+                return false;
             }
         }
         tgui.logError("Reached maximum retry times, cannot download.");
@@ -206,11 +199,49 @@ public class PeerDownloadThread extends Thread {
 
     }
 
-    private void WaitForWriteThread() {
+    private boolean ExecutePreTasks(String relativePathname, SearchRecord searchRecord, ConnectServer connection) {
+        /*  1. Perform Look up to get a list of available resources and create and send request to share with server */
+        try {
+            //get online available sources.
+            sources = getSourcesFromIdx(relativePathname, searchRecord, connection);
+            connection.shutdown();  // shutdown connection with Server
+            if (sources == null) {tgui.logWarn("No Available Sources");
+                return false;
+            }
+            if (sources.length == 0) {tgui.logWarn("No Available Sources");
+                return false;
+            }
+        } catch (Exception e) {
+            tgui.logError("Fail to query idx Server for resources.");
+            return false;
+        }
+
+        /* 2. Load temp File Create/Open Local unfinished file with FileMgr */
+        try {
+            tempFile = getLocalTempFile(relativePathname, searchRecord);
+            totalN = tempFile.getFileDescr().getNumBlocks();
+            tgui.logInfo("Complete File contains blocks quantity: " + totalN);
+        } catch (IOException | NoSuchAlgorithmException e) {
+            tgui.logError("Cannot create local file. Terminating...");
+            return false;
+        }
+
+        /* 3. Initialise Thread to Write block*/
+        try {
+            writeThread = new BlockWriteThread(tempFile, tgui, writeQueue);
+            writeThread.start();
+        } catch (IllegalThreadStateException e) {
+            tgui.logError("Cannot start BlockWrite thread. Terminating...");
+            return false;
+        }
+        return true;
+    }
+
+    private void ReliefWriteThread() {
         while (writeThread.incomingWriteBlocks.size() > 5){
             tgui.logInfo("Waiting for blocks writing thread to finish");
             try {
-                sleep(800);
+                sleep(200);
             }
             catch (InterruptedException e){
                 tgui.logError("Sleep been interrupted");
@@ -231,9 +262,9 @@ public class PeerDownloadThread extends Thread {
         /* Connect to Peer */
         // try to establish connection and handshake with peer server.
         try {
-            tgui.logInfo("Trying to Establish connection to Peer: " + ie.ip);
+            tgui.logInfo("Trying to Establish connection to Peer: " + ie.ip + " Please wait for timeout = 10 seconds");
             socket = new Socket(ie.ip, ie.port);
-            socket.setSoTimeout(3*1000);
+            socket.setSoTimeout(10*1000); // 15 seconds read operation timeout.
             //socket.setSoTimeout(this.timeout);
             InputStream inputStream = socket.getInputStream();
             OutputStream outputStream = socket.getOutputStream();
@@ -273,9 +304,6 @@ public class PeerDownloadThread extends Thread {
      * update required block index,
      * reset current progress on block index transfer
      * if all finish, close file stream
-     * @return
-     * @throws IOException
-     * @throws BlockUnavailableException
      */
     private boolean UpdateIndexAndCheckComplete() throws IOException, BlockUnavailableException {
         // Wait for all written process complete
@@ -325,7 +353,7 @@ public class PeerDownloadThread extends Thread {
             // 1. call singleBlockRequest() first to request file.
             // 2. download block files.
             Message msg = readMsg(bufferedReader);
-            if (!(msg.getClass().getName() == BlockReply.class.getName())) {
+            if (!(msg.getClass().getName().equals(BlockReply.class.getName()))) {
                 tgui.logError("Invalid Message from peer when fetching blockReply");
                 throw new IOException();
             }
@@ -380,8 +408,7 @@ public class PeerDownloadThread extends Thread {
 
         String downloadPath = new File("DOWNLOAD/", relativePathname).getPath();
         tgui.logInfo("Download into : " + downloadPath);
-        FileMgr localTempFile = new FileMgr(downloadPath, searchRecord.fileDescr);
-        return localTempFile;
+        return new FileMgr(downloadPath, searchRecord.fileDescr);
     }
 
     /**
@@ -455,7 +482,7 @@ public class PeerDownloadThread extends Thread {
     Otherwise return true to indicate reply is valid.
      */
     private boolean checkReply(Message msg_back){
-        if (msg_back.getClass().getName() == ErrorMsg.class.getName()) {
+        if (msg_back.getClass().getName().equals(ErrorMsg.class.getName())) {
             tgui.logError(((ErrorMsg) msg_back).msg);
             return false;
         }

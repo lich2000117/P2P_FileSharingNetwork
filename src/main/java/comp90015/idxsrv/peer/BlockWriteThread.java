@@ -5,10 +5,16 @@ import comp90015.idxsrv.message.BlockReply;
 import comp90015.idxsrv.textgui.ISharerGUI;
 
 import java.io.IOException;
-import java.net.Socket;
 import java.util.Base64;
 import java.util.concurrent.LinkedBlockingDeque;
 
+/**
+ * This thread invokes by Downloading thread.
+ * It has a queue take incoming block information and write them sequentially to local.
+ *
+ * @author Chenghao Li
+ *
+ */
 public class BlockWriteThread extends Thread {
     private ISharerGUI tgui;
     public LinkedBlockingDeque<BlockReply> incomingWriteBlocks;
