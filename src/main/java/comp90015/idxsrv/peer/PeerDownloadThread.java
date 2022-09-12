@@ -133,38 +133,45 @@ public class PeerDownloadThread extends Thread {
                     try {
                         // Step 3. send request
                         singleBlockRequest(tempFile, neededIndex_Array.get(cur_BlockArrayIndex), bufferedWriter);
+                    }
+                    catch (IOException e) {
+                        // Cannot send request, move on to next peer.
+                        tgui.logInfo("Cannot send request, Retry....");
+                        GoodByeToPeer(socket, bufferedReader, bufferedWriter);
+                        break;
+                    }
+                    try {
                         // Step 4. get block reply
                         GetBlockReply_AddQueue();
-                        // Step 5. move on to next block
-                        this.cur_BlockArrayIndex += 1;
-                        sleep(200); // to avoid overloading the thread.
-                        // if reach our limit, break the connection
-                        if (this.cur_BlockArrayIndex > MAX_BLOCKS_PER_CONNECTION) {
-                            tgui.logInfo("Reach limit, create new connections.");
-                            tgui.logInfo("Number of Blocks remaining: " + (neededIndex_Array.size() - cur_BlockArrayIndex));
-                            index_sources -= 1;
-                            try {
-                                GoodByeToPeer(socket, bufferedReader, bufferedWriter);
-                                bufferedWriter.close();
-                                bufferedReader.close();
-                                socket.close();
-                            } catch (Exception e) {
-                                tgui.logWarn("Upload Peer timed out before we say goodbye When changing connections.");
-                            }
-                            break;
-                        }
-
-                    } catch (SocketTimeoutException e){
-                        // if other exception happens, abort current block requests, try next block
+                    }
+                    catch (InvalidMessageException e) {
+                        // Cannot read block reply
+                        tgui.logInfo("Invalid Message received, try next block");
+                        continue;
+                    }
+                    catch (SocketTimeoutException e) {
+                        // Cannot read block reply
                         tgui.logInfo("Lost connection on current Peer, Recovery now...");
                         break;
                     }
-                    catch (Exception e) {
-                        // if other exception happens, abort current block requests, try next block
-                        tgui.logInfo("An error occurs on current block download, move on to next block.");
-                        this.cur_BlockArrayIndex += 1;
+                    catch (IOException e) {
+                        // Cannot read block reply
+                        tgui.logInfo("Cannot read reply, Retry....");
                         continue;
                     }
+
+                    // Step 5. move on to next block
+                    this.cur_BlockArrayIndex += 1;
+                    //sleep(200); // to avoid overloading the thread.
+                    // if reach our limit, break the connection
+                    if (this.cur_BlockArrayIndex > MAX_BLOCKS_PER_CONNECTION) {
+                        tgui.logInfo("Reach limit, create new connections.");
+                        tgui.logInfo("Number of Blocks remaining: " + (neededIndex_Array.size() - cur_BlockArrayIndex));
+                        index_sources -= 1;
+                        GoodByeToPeer(socket, bufferedReader, bufferedWriter);
+                        break;
+                    }
+
                 }
             }
             // Step 6. if finish all blocks request or aborted due to error,
@@ -315,7 +322,8 @@ public class PeerDownloadThread extends Thread {
      * return true if at least one request has been sent
      *
      * */
-    private void singleBlockRequest (FileMgr tempFile, int blockIdx_Need, BufferedWriter bufferedWriter) throws IOException {
+    private void singleBlockRequest (FileMgr tempFile, int blockIdx_Need, BufferedWriter bufferedWriter)
+            throws SocketTimeoutException, IOException {
         // 1. (HandShake 1): Send Block request
         writeMsg(bufferedWriter, new BlockRequest(relativePathname, tempFile.getFileDescr().getBlockMd5(blockIdx_Need), blockIdx_Need));
     }
@@ -369,7 +377,7 @@ public class PeerDownloadThread extends Thread {
      * return True if success, False if block is not written.
      *
      */
-    private void GetBlockReply_AddQueue() throws IOException{
+    private void GetBlockReply_AddQueue() throws InvalidMessageException, SocketTimeoutException, IOException{
         //Process Buffer Reader for each connection we made (after removing disconnected peer), to download from them.
         // Listen on reply and also Start a thread Write block to local
         try {
@@ -378,7 +386,7 @@ public class PeerDownloadThread extends Thread {
             Message msg = readMsg(bufferedReader);
             if (!(msg.getClass().getName().equals(BlockReply.class.getName()))) {
                 tgui.logError("Invalid Message from peer when fetching blockReply");
-                throw new IOException();
+                throw new InvalidMessageException();
             }
             // add to writer queue
             writeQueue.add((BlockReply) msg);
@@ -386,7 +394,6 @@ public class PeerDownloadThread extends Thread {
         catch (JsonSerializationException e) {
             tgui.logError("Fail to read from BlockReply");
             //System.out.println("Fail to read from BlockReply");
-            return;
         }
     }
 
@@ -465,17 +472,19 @@ public class PeerDownloadThread extends Thread {
      *Send a goodBye message to a peer via BufferReader and Writer, close the socket.
      *
     **/
-    private void GoodByeToPeer(Socket socket, BufferedReader bufferedReader, BufferedWriter bufferedWriter) throws IOException {
+    private void GoodByeToPeer(Socket socket, BufferedReader bufferedReader, BufferedWriter bufferedWriter) {
         //******************* finish Goodbye message *************
         try {
             // Send Finish GoodBye Signal
             writeMsg(bufferedWriter,new Goodbye());
-            // close the socket
-            socket.close();
+            tgui.logInfo("GoodBye Sent to: " + socket.getInetAddress());
         } catch (Exception e1) {
-            writeMsg(bufferedWriter, new ErrorMsg("Download Peer: Fail to exchange good bye signal"));
+            tgui.logWarn("Download Peer: Fail to send good bye signal");
         }
-        tgui.logInfo("GoodBye Exchanged With: " + socket.getInetAddress());
+        try {
+            // try to close the socket
+            socket.close();
+        } catch (Exception ignored){}
     }
 
     /*

@@ -31,7 +31,7 @@ public class PeerUploadSubThread extends Thread {
      * @throws IOException
      */
     public PeerUploadSubThread(Peer peer, Socket socket, ISharerGUI tgui) {
-        this.peer = peer        ;
+        this.peer = peer;
         this.socket = socket;
         this.tgui = tgui;
     }
@@ -84,7 +84,7 @@ public class PeerUploadSubThread extends Thread {
                 return false;
             }
             catch (IOException e){
-                tgui.logError(e.getMessage());
+                if (e!=null) tgui.logError(e.getMessage());
                 tgui.logWarn("IO Exception encountered when reading first block message");
                 return false;
             }
@@ -101,16 +101,21 @@ public class PeerUploadSubThread extends Thread {
                 try {
                     fileMgr = new FileMgr(blockRequest.filename);
                     if (!ProcessBlockRequests(peer, fileMgr, bufferedWriter, blockRequest)) {
-                        tgui.logWarn("Terminate connection with Peer: " + ip);
+                        tgui.logWarn("Fail to share, Terminate connection with Peer: " + ip);
                         return false;
                     }
+                } catch (SocketTimeoutException e) {
+                    tgui.logWarn("Socket Timeout, Terminate.");
+                    return false;
                 } catch (IOException ioE) {
-                    tgui.logWarn("Couldn't send block: " + blockRequest.blockIdx);
+                    tgui.logWarn("Couldn't send block: " + blockRequest.blockIdx + ", skip to next");
+                    writeMsg(bufferedWriter, new ErrorMsg("Cannot Send Block."));
                 } catch (NoSuchAlgorithmException e) {
                     tgui.logError("No such Algorithm, Terminate connection.");
                     return false;
                 } catch (Exception e) {
                     tgui.logWarn("Current Block Upload error, skip to next");
+                    writeMsg(bufferedWriter, new ErrorMsg("Cannot Send Block."));
                 }
                 /* 2
                  * Get Another message
@@ -126,7 +131,9 @@ public class PeerUploadSubThread extends Thread {
                     return false;
                 }
                 catch (IOException e){
+                    if (e!= null) {tgui.logError(e.getMessage()); tgui.logError(e.getLocalizedMessage());e.printStackTrace();}
                     tgui.logWarn("IO Exception encountered when reading block message");
+                    writeMsg(bufferedWriter, new ErrorMsg("Block is not available."));
                     return false;
                 }
             }
@@ -136,21 +143,25 @@ public class PeerUploadSubThread extends Thread {
                 writeMsg(bufferedWriter, new ErrorMsg("Invalid Message!"));
                 return false;
             }
+            else{
+                tgui.logInfo("Upload Peer: Goodbye Received!");
+                return true;
+            }
         }
         catch (IOException e){
             tgui.logWarn("IO Exception encountered when uploading file");
             return false;
         }
-        tgui.logInfo("Upload Peer: Goodbye Received!");
-        return true;
     }
 
 
     /*
      * Methods to process each of the possible block requests and send block back.
+     * return false when we need to terminate the connection
+     * return true if we fail recover, continue to listen.
      */
     private boolean ProcessBlockRequests(Peer peer, FileMgr fileMgr, BufferedWriter bufferedWriter, BlockRequest msg)
-                        throws NoSuchAlgorithmException, IOException, Exception {
+                        throws SocketTimeoutException, IOException {
 
         // Check if the file requested is in our sharing list.
         if (! peer.sharingFileNames.contains(msg.filename)){
@@ -172,14 +183,19 @@ public class PeerUploadSubThread extends Thread {
                 String c_d = Base64.getEncoder().encodeToString(data);
                 BlockReply bp = new BlockReply(msg.filename, fileMgr.getFileDescr().getFileMd5(), blockidx, c_d);
                 writeMsg(bufferedWriter, bp);
+                tgui.logInfo("Sent Block: " + blockidx);
+                return true;
             }
             catch (BlockUnavailableException e) {
                 writeMsg(bufferedWriter,new ErrorMsg("Block is not available!"));
+                return true;
             }
-            catch (OutOfMemoryError ignored) {}
+            catch (OutOfMemoryError ignored) {return false;}
         }
-        tgui.logInfo("sent Block: " + blockidx);
-        return true;
+        else {
+            writeMsg(bufferedWriter,new ErrorMsg("Block is not available!"));
+            return true;
+        }
     }
 
 
