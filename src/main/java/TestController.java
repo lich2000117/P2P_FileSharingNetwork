@@ -8,8 +8,8 @@ import java.util.ArrayList;
 
 public class TestController {
 
-    static int TEST_PEERS = 700;
-    static int FILE_SIZE = 523999;
+    static int TEST_PEERS = 50;
+    static int FILE_SIZE = 523;
     static int num_success=0;
 
     /**
@@ -36,7 +36,7 @@ public class TestController {
      * @throws InterruptedException
      */
     private static void Share_Test() throws IOException, InterruptedException {
-
+        num_success = 0;
         // create random local file
         CreateRandomFiles.create(TEST_PEERS, FILE_SIZE);
 
@@ -59,7 +59,7 @@ public class TestController {
     }
 
     private static void Search_Test() throws IOException, InterruptedException {
-
+        num_success = 0;
         // create random local file
         CreateRandomFiles.create(TEST_PEERS, FILE_SIZE);
 
