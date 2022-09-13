@@ -15,9 +15,9 @@ public class PeerSearchThread extends Thread {
     private final InetAddress idxAddress;
     private final int idxPort;
     private final String idxSecret;
-    private ISharerGUI tgui;
     private String[] keywords;
     private int maxhits;
+    public boolean success;
 
     /**
      * Create a Peer Download Thread, which attempts to the bind to the provided
@@ -30,29 +30,25 @@ public class PeerSearchThread extends Thread {
                             int maxhits,
                             InetAddress idxAddress,
                             int idxPort,
-                            String idxSecret, ISharerGUI tgui) {
+                            String idxSecret) {
         this.keywords = keywords;
         this.maxhits = maxhits;
         this.idxAddress = idxAddress;
         this.idxPort = idxPort;
         this.idxSecret = idxSecret;
-        this.tgui = tgui;
     }
 
     @Override
     public void run() {
-        tgui.logInfo("Trying to Search with Idx Server in this Thread...");
         while(!isInterrupted()) {
             // ask for every peer to send their blocks, if all file success, success and shutdown this thread.
             if (SearchServer(keywords, maxhits, idxAddress, idxPort, idxSecret)){
-                tgui.logInfo("Successfully search from Idx Server!");
-                tgui.logInfo("Search thread completed.");
+                this.success = true;
                 return;
             }
             // if download failed, return and print error message
             else {
-                tgui.logWarn("Can search from Idx Server");
-                tgui.logInfo("Search Request thread completed.");
+                this.success = false;
                 return;
             }
         }
@@ -72,7 +68,6 @@ public class PeerSearchThread extends Thread {
             Message search_back = connection.getMsg();
             // check if it's error message
             if (!checkReply(search_back)){
-                tgui.logWarn("Unexpected Server Reply.");
                 return false;
             }
             SearchReply searchReply = (SearchReply) search_back;
@@ -81,22 +76,18 @@ public class PeerSearchThread extends Thread {
             IndexElement[] hits = searchReply.hits;
             Integer[] seedCounts = searchReply.seedCounts;
             // before add, remove previous history
-            tgui.clearSearchHits();
             // iterate through list of returned request (All relevant file lists + number of sharer for each file)
             for (int i = 0; i < hits.length; i++) {
                 // create new searchRecord class and add to our gui table.
                 IndexElement ie = hits[i];
                 SearchRecord newSearchRecord =
                         new SearchRecord(ie.fileDescr, seedCounts[i], idxAddress, idxPort, idxSecret, ie.secret);
-                tgui.addSearchHit(ie.filename, newSearchRecord);
             }
             connection.shutdown();
             return true;
         } catch (JsonSerializationException e) {
-            tgui.logError("JsonSerializationException");
             return false;
         } catch (IOException e) {
-            tgui.logError("IO exception found");
             return false;
         }
     }
@@ -107,7 +98,6 @@ public class PeerSearchThread extends Thread {
      */
     private boolean checkReply(Message msg_back){
         if (msg_back.getClass().getName().equals(ErrorMsg.class.getName())) {
-            tgui.logError(((ErrorMsg) msg_back).msg);
             return false;
         }
         return true;

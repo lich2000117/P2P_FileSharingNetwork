@@ -1,3 +1,4 @@
+import comp90015.idxsrv.peer.PeerSearchThread;
 import comp90015.idxsrv.peer.PeerShareThread;
 
 import java.io.IOException;
@@ -6,6 +7,11 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 
 public class TestController {
+
+    static int TEST_PEERS = 700;
+    static int FILE_SIZE = 523999;
+    static int num_success=0;
+
     /**
      * Test Controller, Initialise test using this class.
      * @param args
@@ -14,6 +20,10 @@ public class TestController {
      */
     public static void main(String[] args) throws IOException, InterruptedException {
         Share_Test();
+        //Search_Test();
+        long mem = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+        System.out.println("Memory Usage: " + mem*0.000001 + " MB");
+
     }
 
 
@@ -26,9 +36,6 @@ public class TestController {
      * @throws InterruptedException
      */
     private static void Share_Test() throws IOException, InterruptedException {
-        int TEST_PEERS = 500;
-        int FILE_SIZE = 523999;
-        int num_success=0;
 
         // create random local file
         CreateRandomFiles.create(TEST_PEERS, FILE_SIZE);
@@ -50,4 +57,28 @@ public class TestController {
         System.out.println("Milliseconds Execution: " + timeElapsed/1000000.0);
         System.out.println("Success Rate: " + num_success/((float) TEST_PEERS));
     }
+
+    private static void Search_Test() throws IOException, InterruptedException {
+
+        // create random local file
+        CreateRandomFiles.create(TEST_PEERS, FILE_SIZE);
+
+        // get share thread running
+        ArrayList<PeerSearchThread> threads = SendSpamSearchRequests.getThreads(InetAddress.getByName("localhost"), 3200, TEST_PEERS);
+        long start = System.nanoTime();
+        for (PeerSearchThread t: threads) {
+            t.start();
+        }
+
+        for (PeerSearchThread t: threads) {
+            t.join();
+            if (t.success) num_success += 1;
+        }
+
+        long finish = System.nanoTime();
+        long timeElapsed = finish - start;
+        System.out.println("Milliseconds Execution: " + timeElapsed/1000000.0);
+        System.out.println("Success Rate: " + num_success/((float) TEST_PEERS));
+    }
+
 }

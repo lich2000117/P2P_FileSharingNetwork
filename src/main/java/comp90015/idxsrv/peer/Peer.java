@@ -67,7 +67,7 @@ public class Peer implements IPeer {
 			InetAddress idxAddress,
 			int idxPort,
 			String idxSecret) {
-		PeerSearchThread searchThread = new PeerSearchThread(keywords, maxhits, idxAddress, idxPort, idxSecret, tgui);
+		PeerSearchThread searchThread = new PeerSearchThread(keywords, maxhits, idxAddress, idxPort, idxSecret);
 		searchThread.start();
 	}
 
