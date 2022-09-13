@@ -7,6 +7,7 @@ import comp90015.idxsrv.server.IndexElement;
 import comp90015.idxsrv.textgui.ISharerGUI;
 
 import java.io.*;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
@@ -292,7 +293,8 @@ public class PeerDownloadThread extends Thread {
         // try to establish connection and handshake with peer server.
         try {
             tgui.logInfo("Connecting to Peer: " + ie.ip + ", timeout = " + 10 + " seconds");
-            socket = new Socket(ie.ip, ie.port);
+            this.socket = new Socket();
+            socket.connect(new InetSocketAddress(ie.ip, ie.port), 10*1000);
             socket.setSoTimeout(10*1000); // 15 seconds read operation timeout.
             //socket.setSoTimeout(this.timeout);
             InputStream inputStream = socket.getInputStream();

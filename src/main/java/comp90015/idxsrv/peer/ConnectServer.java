@@ -5,6 +5,7 @@ import comp90015.idxsrv.textgui.ISharerGUI;
 
 import java.io.*;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
@@ -37,7 +38,9 @@ public class ConnectServer {
     public boolean MakeConnection(InetAddress Address, int Port, String Secret){
         try {
             // 1. (Initialise) Create Socket
-            this.socket = new Socket(Address, Port);
+            tgui.logInfo("Trying to connect, Timeout = " + 10 + " seconds");
+            this.socket = new Socket();
+            socket.connect(new InetSocketAddress(Address, Port), 10*1000);
             this.inputStream = this.socket.getInputStream();
             this.outputStream = this.socket.getOutputStream();
             // initialise input and outputStream

@@ -21,11 +21,8 @@ public class BlockWriteThread extends Thread {
     private FileMgr tempFile;
 
     /**
-     * Create a Peer Download Thread, which attempts to the bind to the provided
-     * port with a server socket. The thread must be explicitly started.
-     * Also it process the incoming request in socket
+     * Create a Peer Download Thread,
      *
-     * @param tgui an object that implements the terminal logger interface
      */
     public BlockWriteThread(FileMgr tempFile, ISharerGUI tgui, LinkedBlockingDeque<BlockReply> incomingWriteBlocks){
         this.tempFile = tempFile;
