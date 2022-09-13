@@ -18,13 +18,10 @@ public class ConnectServer {
     private Socket socket;
     private InputStream inputStream;
     private OutputStream outputStream;
-    private ISharerGUI tgui;
     private BufferedReader bufferedReader;
     private BufferedWriter bufferedWriter;
 
-    public ConnectServer(ISharerGUI tgui){
-        this.tgui = tgui;
-    }
+    public ConnectServer(){}
 
     /**
      * Make a socket Connection towards target Index Server.
@@ -56,15 +53,12 @@ public class ConnectServer {
             if (auth_back.getClass().getName() == AuthenticateReply.class.getName()) {
                 AuthenticateReply reply = (AuthenticateReply) auth_back;
                 if (reply.success != true) {
-                    tgui.logError("ServerSide Authentication Failed! Check your secret with Index Server.");
                     return false;
                 }
             }
-            tgui.logInfo("Successfully connected to index server!");
             return true;
         }
         catch (Exception e){
-            tgui.logWarn("Failed to connect to index server!");
             return false;
         }
     }
@@ -73,7 +67,6 @@ public class ConnectServer {
     Shutdown current connection.
      */
     public void shutdown() throws IOException {
-        tgui.logInfo("Connection to Idx Server Closed!");
         this.socket.close();
     }
 
@@ -93,7 +86,7 @@ public class ConnectServer {
      */
 
     private void writeMsg(BufferedWriter bufferedWriter, Message msg) throws IOException {
-        tgui.logDebug("sending: "+msg.toString());
+        //tgui.logDebug("sending: "+msg.toString());
         bufferedWriter.write(msg.toString());
         bufferedWriter.newLine();
         bufferedWriter.flush();
@@ -103,7 +96,7 @@ public class ConnectServer {
         String jsonStr = bufferedReader.readLine();
         if(jsonStr!=null) {
             Message msg = (Message) MessageFactory.deserialize(jsonStr);
-            tgui.logDebug("received: "+msg.toString());
+            //tgui.logDebug("received: "+msg.toString());
             return msg;
         } else {
             throw new IOException();

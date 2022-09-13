@@ -62,7 +62,7 @@ public class PeerSearchThread extends Thread {
 
     private boolean SearchServer(String[] keywords, int maxhits, InetAddress idxAddress, int idxPort, String idxSecret) {
         // try to establish connection and handshake with idx server.
-        ConnectServer connection = new ConnectServer(this.tgui);
+        ConnectServer connection = new ConnectServer();
         if (!connection.MakeConnection(idxAddress, idxPort, idxSecret)) return false;
 
         // Send current request to IDX server

@@ -18,46 +18,40 @@ public class PeerShareThread extends Thread {
     private final int idxPort;
     private final String idxSecret;
     private final String shareSecret;
-    private ISharerGUI tgui;
     private String basedir;
     private int peerPort;
-    private Peer peer;
+    public boolean success;
 
 
     /**
      * Create a Peer Download Thread, which attempts to the bind to the provided
      * port with a server socket. The thread must be explicitly started.
      * Also it process the incoming request in socket
-     * @param tgui an object that implements the terminal logger interface
+     *
      * @throws IOException
      */
-    public PeerShareThread(Peer peer, String basedir, File file, InetAddress idxAddress, int idxPort, String idxSecret,
-                           String shareSecret, ISharerGUI tgui, int peerPort) {
-        this.peer = peer;
+    public PeerShareThread(String basedir, File file, InetAddress idxAddress, int idxPort, String idxSecret,
+                           String shareSecret, int peerPort) {
         this.basedir = basedir;
         this.file = file;
         this.idxAddress = idxAddress;
         this.idxPort = idxPort;
         this.idxSecret = idxSecret;
         this.shareSecret = shareSecret;
-        this.tgui = tgui;
         this.peerPort = peerPort;
     }
 
     @Override
     public void run() {
-        tgui.logInfo("Trying to Share with Idx Server in this Thread...");
         while(!isInterrupted()) {
             // ask for every peer to send their blocks, if all file success, success and shutdown this thread.
             if (shareWithServer(file, idxAddress, idxPort, idxSecret, shareSecret)){
-                tgui.logInfo("Successfully share File to Idx Server!");
-                tgui.logInfo("Share Request thread completed.");
+                this.success=true;
                 return;
             }
             // if download failed, return and print error message
             else {
-                tgui.logWarn("Can not share file with Idx Server");
-                tgui.logInfo("Share Request thread completed.");
+                this.success=false;
                 return;
             }
         }
@@ -79,7 +73,7 @@ public class PeerShareThread extends Thread {
      */
     private boolean shareWithServer(File file, InetAddress idxAddress, int idxPort, String idxSecret, String shareSecret) {
         // Check if file in base dir
-        if (! file.getParent().contains(basedir)){tgui.logWarn("Sharing File Not in Base Directory!");
+        if (! file.getParent().contains(basedir)){;
             return false;
         }
         FileMgr fileMgr;
@@ -92,14 +86,12 @@ public class PeerShareThread extends Thread {
             relativePathName = new File(basedir).toURI().relativize(new File(filePath).toURI()).getPath();
             fileMgr = new FileMgr(filePath);
         } catch (NoSuchAlgorithmException e) {
-            tgui.logError("No such Algorithm! Cannot use FileMgr to create local file.");
             return false;
         } catch (IOException e) {
-            tgui.logError("IO operation failed! Cannot use FileMgr to create local file.");
             return false;
         }
         // try to establish connection and handshake with idx server.
-        ConnectServer connection = new ConnectServer(this.tgui);
+        ConnectServer connection = new ConnectServer();
         if (!connection.MakeConnection(idxAddress, idxPort, idxSecret)) return false;
 
         // create and send request to share with idx server
@@ -110,7 +102,7 @@ public class PeerShareThread extends Thread {
             // receive reply from idx server
             Message msg_back = connection.getMsg();
             // check if it's error message
-            if (!checkReply(msg_back)){tgui.logWarn("Something wrong with Server Side.");
+            if (!checkReply(msg_back)){
                 return false;
             }
 
@@ -118,20 +110,15 @@ public class PeerShareThread extends Thread {
             ShareReply reply = (ShareReply) msg_back;
             ShareRecord newRecord = new ShareRecord(fileMgr, reply.numSharers,"Ready", idxAddress,
                     idxPort, idxSecret, shareSecret);
-            tgui.addShareRecord(relativePathName, newRecord);
             connection.shutdown();
             fileMgr.closeFile();
-            peer.sharingFileNames.add(relativePathName);
             return true;
         }
         catch (FileNotFoundException e) {
-            tgui.logError("File out of Directory!");
             return false;
         } catch (JsonSerializationException e) {
-            tgui.logError("JsonSerializationException");
             return false;
         } catch (IOException e) {
-            tgui.logError("IO operation failed! Abort");
             return false;
         }
     }
@@ -142,7 +129,6 @@ public class PeerShareThread extends Thread {
      */
     private boolean checkReply(Message msg_back){
         if (msg_back.getClass().getName().equals(ErrorMsg.class.getName())) {
-            tgui.logError(((ErrorMsg) msg_back).msg);
             return false;
         }
         return true;

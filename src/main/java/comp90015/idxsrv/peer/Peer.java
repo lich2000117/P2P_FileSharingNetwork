@@ -56,7 +56,7 @@ public class Peer implements IPeer {
 	public void shareFileWithIdxServer(File file, InetAddress idxAddress, int idxPort, String idxSecret,
 			String shareSecret) {
 		// start a share Thread
-		PeerShareThread shareThread = new PeerShareThread(this, basedir, file, idxAddress, idxPort, idxSecret, shareSecret, tgui, port);
+		PeerShareThread shareThread = new PeerShareThread(basedir, file, idxAddress, idxPort, idxSecret, shareSecret, port);
 		shareThread.start();
 	}
 
@@ -77,7 +77,7 @@ public class Peer implements IPeer {
 	public boolean dropShareWithIdxServer(String relativePathname, ShareRecord shareRecord) {
 
 		// try to establish connection and handshake with idx server.
-		ConnectServer connection = new ConnectServer(this.tgui);
+		ConnectServer connection = new ConnectServer();
 		if (!connection.MakeConnection(shareRecord.idxSrvAddress, shareRecord.idxSrvPort, shareRecord.idxSrvSecret)) return false;
 
 		// create and send request to share with server
@@ -108,7 +108,7 @@ public class Peer implements IPeer {
 	@Override
 	public void downloadFromPeers(String relativePathname, SearchRecord searchRecord) {
 		// try to establish connection and handshake with index server.
-		ConnectServer connection = new ConnectServer(this.tgui);
+		ConnectServer connection = new ConnectServer();
 		if (!connection.MakeConnection(searchRecord.idxSrvAddress, searchRecord.idxSrvPort, searchRecord.idxSrvSecret)) return;
 
 		// create a thread to ask for download and make it run.

@@ -203,7 +203,7 @@ public class PeerDownloadThread extends Thread {
                     // if run out of current resources, try querying idx server for new resources again
                     if (index_sources >= sources.length) {
                         //reconnect to idx then query for other resources.
-                        ConnectServer connectionRetry = new ConnectServer(this.tgui);
+                        ConnectServer connectionRetry = new ConnectServer();
                         if (connectionRetry.MakeConnection(searchRecord.idxSrvAddress, searchRecord.idxSrvPort, searchRecord.idxSrvSecret)) {
                             sources = getSourcesFromIdx(relativePathname, searchRecord, connectionRetry);
                             connectionRetry.shutdown();
