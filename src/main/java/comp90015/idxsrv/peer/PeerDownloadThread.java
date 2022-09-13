@@ -66,12 +66,14 @@ public class PeerDownloadThread extends Thread {
         // ask for every peer to send their blocks, if all file success, success and shutdown this thread.
         if (downloadFileFromPeers(relativePathname, searchRecord, connection)){
             tgui.logInfo("Downloading thread completed.");
+            try {this.tempFile.closeFile();} catch (Exception ignore){}
             return;
         }
         // if download failed, return and print error message
         else {
             tgui.logWarn("Can not download file: " + relativePathname + " not enough resources out there.");
             tgui.logInfo("Downloading thread completed.");
+            try {this.tempFile.closeFile();} catch (Exception ignore){}
             return;
         }
     }
