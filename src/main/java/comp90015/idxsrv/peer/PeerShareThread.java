@@ -134,6 +134,10 @@ public class PeerShareThread extends Thread {
             tgui.logError("IO operation failed! Abort");
             return false;
         }
+        catch (Exception e) {
+            tgui.logError("IO operation failed! Exception occurs.");
+            return false;
+        }
     }
 
     /*

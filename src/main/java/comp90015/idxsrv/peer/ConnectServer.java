@@ -39,8 +39,8 @@ public class ConnectServer {
         try {
             // 1. (Initialise) Create Socket
             tgui.logInfo("Trying to connect, Timeout = " + 10 + " seconds");
-            this.socket = new Socket();
-            socket.connect(new InetSocketAddress(Address, Port), 10*1000);
+            this.socket = new Socket(Address, Port);
+            //socket.connect(new InetSocketAddress(Address, Port), 10*1000);
             this.inputStream = this.socket.getInputStream();
             this.outputStream = this.socket.getOutputStream();
             // initialise input and outputStream
@@ -83,7 +83,7 @@ public class ConnectServer {
     /*
      * Send and Receive a Message object in current connection.
      */
-    public void sendRequest(Message msg) throws IOException {
+    public void sendRequest(Message msg) throws JsonSerializationException, IOException {
         this.writeMsg(this.bufferedWriter, msg);
     }
 
@@ -95,8 +95,11 @@ public class ConnectServer {
      * Methods for writing and reading messages.  By Aaron.
      */
 
-    private void writeMsg(BufferedWriter bufferedWriter, Message msg) throws IOException {
-        tgui.logDebug("sending: "+msg.toString());
+    private void writeMsg(BufferedWriter bufferedWriter, Message msg) throws JsonSerializationException, IOException {
+        if (msg.toString()==null){
+            tgui.logError("Share Message is invalid.");
+            throw new IOException();
+        }
         bufferedWriter.write(msg.toString());
         bufferedWriter.newLine();
         bufferedWriter.flush();
@@ -106,7 +109,6 @@ public class ConnectServer {
         String jsonStr = bufferedReader.readLine();
         if(jsonStr!=null) {
             Message msg = (Message) MessageFactory.deserialize(jsonStr);
-            tgui.logDebug("received: "+msg.toString());
             return msg;
         } else {
             throw new IOException();
