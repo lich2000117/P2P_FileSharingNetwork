@@ -10,7 +10,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
 /**
- * This class makes connection to Idx Server and send/receive messages from it.
+ * This class makes connection to Idx Server and send/receive messages to the server using this class.
  *
  * @author Chenghao Li
  *
@@ -38,9 +38,10 @@ public class ConnectServer {
     public boolean MakeConnection(InetAddress Address, int Port, String Secret){
         try {
             // 1. (Initialise) Create Socket
-            tgui.logInfo("Trying to connect, Timeout = " + 10 + " seconds");
-            this.socket = new Socket(Address, Port);
-            //socket.connect(new InetSocketAddress(Address, Port), 10*1000);
+            int timeout = 5;
+            tgui.logInfo("Trying to connect, Timeout = " + timeout + " seconds");
+            this.socket = new Socket();
+            socket.connect(new InetSocketAddress(Address, Port), timeout*1000);
             this.inputStream = this.socket.getInputStream();
             this.outputStream = this.socket.getOutputStream();
             // initialise input and outputStream

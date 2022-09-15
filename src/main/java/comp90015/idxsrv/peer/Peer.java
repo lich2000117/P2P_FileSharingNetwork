@@ -44,6 +44,7 @@ public class Peer implements IPeer {
 		peerUploadIOThread.start();
 	}
 
+	// shutdown related threads
 	public void shutdown() throws InterruptedException, IOException {
 		peerUploadIOThread.interrupt();
 		peerUploadIOThread.join();
@@ -67,6 +68,7 @@ public class Peer implements IPeer {
 			InetAddress idxAddress,
 			int idxPort,
 			String idxSecret) {
+		// start a thread to search index server.
 		PeerSearchThread searchThread = new PeerSearchThread(keywords, maxhits, idxAddress, idxPort, idxSecret, tgui);
 		searchThread.start();
 	}
@@ -92,6 +94,7 @@ public class Peer implements IPeer {
 			DropShareReply dropShareReply = (DropShareReply) msg_back;
 			if (!dropShareReply.success) { tgui.logError("Server failed to drop the record"); return false;}
 
+			// Drop file succeed:
 			connection.shutdown();
 			shareRecord.fileMgr.closeFile();
 			tgui.logInfo("Drop file success!");

@@ -8,7 +8,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 
 /**
- * A Thread that make a connection to idx Server and share the file
+ * A Thread that make a connection to idx Server and search existing resources then add to gui.
  * @author Chenghao Li
  */
 public class PeerSearchThread extends Thread {

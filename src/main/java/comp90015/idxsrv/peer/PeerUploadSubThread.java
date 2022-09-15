@@ -16,6 +16,9 @@ import java.util.Base64;
 
 /**
  * A Thread that make a connection to idx Server and share the file
+ *
+ * This sub thread was created by main share thread to handle different requests for different file, from different peers.
+ *
  * @author Chenghao Li
  */
 public class PeerUploadSubThread extends Thread {
@@ -117,7 +120,7 @@ public class PeerUploadSubThread extends Thread {
                     tgui.logWarn("Current Block Upload error, skip to next");
                     writeMsg(bufferedWriter, new ErrorMsg("Cannot Send Block."));
                 }
-                /* 2
+                /* 3
                  * Get Another message
                  */
                 try {

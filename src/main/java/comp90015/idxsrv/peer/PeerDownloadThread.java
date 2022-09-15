@@ -46,9 +46,10 @@ public class PeerDownloadThread extends Thread {
     private int cur_BlockArrayIndex = 0; // Index of NeededBlockIndex_Array, Not index of Block!
     private LinkedBlockingDeque<BlockReply> writeQueue = new LinkedBlockingDeque<>();
     /**
-     * Create a Peer Download Thread, which attempts to the bind to the provided
-     * port with a server socket. The thread must be explicitly started.
-     * Also it process the incoming request in socket
+     * Create a Peer Download Thread, the thread must be explicitly started.
+     * Also it process the incoming request in socket.
+     * The thread establish connection with index server to get resources, then connect to peers to download,
+     * put blocks in another writing thread.
      * @param tgui an object that implements the terminal logger interface
      * @throws IOException
      */
@@ -67,14 +68,12 @@ public class PeerDownloadThread extends Thread {
         if (downloadFileFromPeers(relativePathname, searchRecord, connection)){
             tgui.logInfo("Downloading thread completed.");
             try {this.tempFile.closeFile();} catch (Exception ignore){}
-            return;
         }
         // if download failed, return and print error message
         else {
             tgui.logWarn("Can not download file: " + relativePathname + " not enough resources out there.");
             tgui.logInfo("Downloading thread completed.");
             try {this.tempFile.closeFile();} catch (Exception ignore){}
-            return;
         }
     }
 
@@ -86,7 +85,7 @@ public class PeerDownloadThread extends Thread {
         // 3. initialise write thread.
         if (!ExecutePreTasks(relativePathname, searchRecord, connection)) return false;
 
-        /*
+        /**
         Strategy:
             Step 0: Set maximum retry times if failure occurs.
             Step 1: From online resources, build concurrent connections to `maxPeer` amount of peers.
@@ -106,7 +105,7 @@ public class PeerDownloadThread extends Thread {
                 - until it reaches maximum retry times.
 
         NOTE: to deal with memory issue, `maxPeer` has been set to 1 and their corresponding ArrayList has been removed.
-        */
+        **/
 
         // 0. get remained blocks required
         try {
@@ -130,52 +129,8 @@ public class PeerDownloadThread extends Thread {
 
             // Step 1. Make connection to peers, restricted to max retry times, maxPeer, maximum amount of peers to connect concurrently.
             if (MakeConnectionToPeer(index_sources)) {
-                // Step 2. Keep asking current peer to download block file
-                while (this.cur_BlockArrayIndex < neededIndex_Array.size()) {
-                    ReliefWriteThread(); // If Write thread has too many blocks in queue, let current downloading wait.
-                    try {
-                        // Step 3. send request
-                        singleBlockRequest(tempFile, neededIndex_Array.get(cur_BlockArrayIndex), bufferedWriter);
-                    }
-                    catch (IOException e) {
-                        // Cannot send request, move on to next peer.
-                        tgui.logInfo("Cannot send request, Retry....");
-                        GoodByeToPeer(socket, bufferedReader, bufferedWriter);
-                        break;
-                    }
-                    try {
-                        // Step 4. get block reply
-                        GetBlockReply_AddQueue();
-                    }
-                    catch (InvalidMessageException e) {
-                        // Cannot read block reply
-                        tgui.logInfo("Invalid Message received, try next block");
-                        continue;
-                    }
-                    catch (SocketTimeoutException e) {
-                        // Cannot read block reply
-                        tgui.logInfo("Lost connection on current Peer, Recovery now...");
-                        break;
-                    }
-                    catch (IOException e) {
-                        // Cannot read block reply
-                        tgui.logInfo("Cannot read reply, Retry....");
-                        continue;
-                    }
-
-                    // Step 5. move on to next block
-                    this.cur_BlockArrayIndex += 1;
-                    //sleep(200); // to avoid overloading the thread.
-                    // if reach our limit, break the connection
-                    if (this.cur_BlockArrayIndex > MAX_BLOCKS_PER_CONNECTION) {
-                        tgui.logInfo("Reach limit, create new connections.");
-                        tgui.logInfo("Number of Blocks remaining: " + (neededIndex_Array.size() - cur_BlockArrayIndex));
-                        index_sources -= 1;
-                        GoodByeToPeer(socket, bufferedReader, bufferedWriter);
-                        break;
-                    }
-
-                }
+                // Step 2. Keep asking current peer to download block file, update index resources.
+                index_sources = SendRequests(index_sources);
             }
             // Step 6. if finish all blocks request or aborted due to error,
             //          check if we complete file transfer and update needed blocks index
@@ -230,6 +185,87 @@ public class PeerDownloadThread extends Thread {
 
     }
 
+    /**
+     *  Iterate through every blocks needed and send those corresponding requests to server.
+     * @param index_sources
+     * @return
+     */
+    private int SendRequests(int index_sources) {
+        while (this.cur_BlockArrayIndex < neededIndex_Array.size()) {
+            JoinWithWriteThread(); // If Write thread has too many blocks in queue, let current downloading wait.
+            try {
+                // Step 3. send request
+                singleBlockRequest(tempFile, neededIndex_Array.get(cur_BlockArrayIndex), bufferedWriter);
+            }
+            catch (IOException e) {
+                // Cannot send request, move on to next peer.
+                tgui.logInfo("Cannot send request, Retry....");
+                GoodByeToPeer(socket, bufferedReader, bufferedWriter);
+                break;
+            }
+            try {
+                // Step 4. get block reply
+                GetBlockReply_AddQueue();
+            }
+            catch (InvalidMessageException e) {
+                // Cannot read block reply
+                tgui.logInfo("Invalid Message received, try next block");
+                continue;
+            }
+            catch (SocketTimeoutException e) {
+                // Cannot read block reply
+                tgui.logInfo("Lost connection on current Peer, Recovery now...");
+                break;
+            }
+            catch (IOException e) {
+                // Cannot read block reply
+                tgui.logInfo("Cannot read reply, Retry....");
+                continue;
+            }
+
+            // Step 5. move on to next block
+            this.cur_BlockArrayIndex += 1;
+            //sleep(200); // to avoid overloading the thread.
+            // if reach our limit, break the connection
+            if (this.cur_BlockArrayIndex > MAX_BLOCKS_PER_CONNECTION) {
+                tgui.logInfo("Reach limit, create new connections.");
+                tgui.logInfo("Number of Blocks remaining: " + (neededIndex_Array.size() - cur_BlockArrayIndex));
+                index_sources -= 1;
+                GoodByeToPeer(socket, bufferedReader, bufferedWriter);
+                break;
+            }
+
+        }
+        return index_sources;
+    }
+
+
+
+    /**
+     * Send BlockRequest to every peer in array,
+     * With Hyper Parameter maxPeer indicate how many peers we communicate each time
+     *
+     * if maxPeer = 4,
+     * Send 4 requests to 4 peers.
+     * If one of them timeout, or we cannot send request to,
+     * Assign current block request to next peer.
+     * return true if at least one request has been sent
+     *
+     * */
+    private void singleBlockRequest (FileMgr tempFile, int blockIdx_Need, BufferedWriter bufferedWriter)
+            throws SocketTimeoutException, IOException {
+        // 1. (HandShake 1): Send Block request
+        writeMsg(bufferedWriter, new BlockRequest(relativePathname, tempFile.getFileDescr().getBlockMd5(blockIdx_Need), blockIdx_Need));
+    }
+
+    /**
+     * Before sending requests, need to check if there is enough resources,
+     * create local file etc.
+     * @param relativePathname
+     * @param searchRecord
+     * @param connection
+     * @return
+     */
     private boolean ExecutePreTasks(String relativePathname, SearchRecord searchRecord, ConnectServer connection) {
         /*  1. Perform Look up to get a list of available resources and create and send request to share with server */
         try {
@@ -268,7 +304,11 @@ public class PeerDownloadThread extends Thread {
         return true;
     }
 
-    private void ReliefWriteThread() {
+    /**
+     * Check the status of Write thread, if it is heavy loaded, pause the downloading process to wait for IO operation
+     * finished writing to local.
+     */
+    private void JoinWithWriteThread() {
         while (writeThread.incomingWriteBlocks.size() > 5){
             System.out.println("Waiting for blocks writing thread to finish");
             tgui.logInfo("Waiting for blocks writing thread to finish");
@@ -315,23 +355,6 @@ public class PeerDownloadThread extends Thread {
     }
 
 
-    /**
-     * Send BlockRequest to every peer in array,
-     * With Hyper Parameter maxPeer indicate how many peers we communicate each time
-     *
-     * if maxPeer = 4,
-     * Send 4 requests to 4 peers.
-     * If one of them timeout, or we cannot send request to,
-     * Assign current block request to next peer.
-     * return true if at least one request has been sent
-     *
-     * */
-    private void singleBlockRequest (FileMgr tempFile, int blockIdx_Need, BufferedWriter bufferedWriter)
-            throws SocketTimeoutException, IOException {
-        // 1. (HandShake 1): Send Block request
-        writeMsg(bufferedWriter, new BlockRequest(relativePathname, tempFile.getFileDescr().getBlockMd5(blockIdx_Need), blockIdx_Need));
-    }
-
 
     /**
      * Check if all local file finished,
@@ -340,9 +363,7 @@ public class PeerDownloadThread extends Thread {
      * if all finish, close file stream
      */
     private boolean UpdateIndexAndCheckComplete() throws IOException, BlockUnavailableException {
-        // Wait for all written process complete
-//        try {sleep(5*1000);}
-//        catch (Exception e) {}
+        // Wait for all written process complete all existing IO operations
         while (true) {
             if (writeThread.incomingWriteBlocks.isEmpty()) {
                 if (writeThread.getState().equals(State.BLOCKED)) {
@@ -353,9 +374,8 @@ public class PeerDownloadThread extends Thread {
                 }
             }
         }
-        // until if we finish writing number of blocks we ask to write
-        // reset params
 
+        // reset params / state
         remainedBlocksIdx.clear();
         this.cur_BlockArrayIndex = 0;
         getNeededBlockIdx(tempFile, totalN, remainedBlocksIdx);
@@ -368,9 +388,6 @@ public class PeerDownloadThread extends Thread {
         Collections.shuffle(neededIndex_Array);
         return false;
     }
-
-
-
 
 
     /**
@@ -400,7 +417,6 @@ public class PeerDownloadThread extends Thread {
             //System.out.println("Fail to read from BlockReply");
         }
     }
-
 
 
     /**
@@ -506,7 +522,6 @@ public class PeerDownloadThread extends Thread {
         String jsonStr = bufferedReader.readLine();
         if(jsonStr!=null) {
             Message msg = (Message) MessageFactory.deserialize(jsonStr);
-            //tgui.logDebug("received: "+msg.toString());
             return msg;
         } else {
             throw new IOException();

@@ -9,7 +9,8 @@ import java.net.InetAddress;
 import java.security.NoSuchAlgorithmException;
 
 /**
- * A Thread that make a connection to idx Server and share the file
+ * A Thread that make a connection to idx Server and share the file to the index server
+ * Add to gui if succeed.
  * @author Chenghao Li
  */
 public class PeerShareThread extends Thread {

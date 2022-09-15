@@ -10,10 +10,11 @@ import java.util.concurrent.LinkedBlockingDeque;
 
 /**
  * This thread invokes by Downloading thread.
- * It has a queue take incoming block information and write them sequentially to local.
+ * It has a queue take incoming block reply and write them sequentially to local.
+ *
+ * This thread's status is checked once the peer want to verify if local file is finished downloading.
  *
  * @author Chenghao Li
- *
  */
 public class BlockWriteThread extends Thread {
     private ISharerGUI tgui;
@@ -40,7 +41,8 @@ public class BlockWriteThread extends Thread {
                 msg = incomingWriteBlocks.take();
                 if (SingleBlockWrite(tempFile, msg)) {
                     //tgui.logInfo("Block written successful.");
-                }// if download failed, return and print error message
+                }
+                // if download failed, return and print error message
                 else {
                     tgui.logWarn("Can not write block.");
                 }
@@ -48,13 +50,12 @@ public class BlockWriteThread extends Thread {
                 tgui.logWarn("Writer Thread interrupted.");
                 break;
             }
-
         }
         tgui.logInfo("Downloading thread completed.");
     }
 
     private boolean SingleBlockWrite(FileMgr tempFile, BlockReply msg) {
-        // 3. Check Block Hash, see if the block we want is the same as received using MD5
+        // Check Block Hash, see if the block we want is the same as received using MD5
         try {
             BlockReply block_reply = msg;
             int blockIdx = block_reply.blockIdx;
@@ -64,7 +65,7 @@ public class BlockWriteThread extends Thread {
                 return false;
             }
 
-            // 6. Write to Local File's block with FileMgr
+            // Write to Local File's block with FileMgr
             if (tempFile.writeBlock(blockIdx, receivedData)) {
                 tgui.logInfo("Received Block " + blockIdx);
             } else {

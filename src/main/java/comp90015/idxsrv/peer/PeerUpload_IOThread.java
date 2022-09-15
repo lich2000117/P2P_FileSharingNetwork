@@ -16,9 +16,11 @@ import comp90015.idxsrv.textgui.ISharerGUI;
 
 /**
  * An upload thread that runs with peer class.
- * Share files in the share list.
+ * Share files if it is in the share list.
  * Take incoming connections from queue produced by IO thread.
  * Terminate current peer connection if invalid protocol, Algorithm error.
+ *
+ * ** It creates several sub-sharing threads to enable concurrent multi file sharing function.
  *
  * @author Chenghao Li
  */
