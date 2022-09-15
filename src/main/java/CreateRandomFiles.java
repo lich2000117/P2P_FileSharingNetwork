@@ -1,16 +1,17 @@
-/**
- * Code Used: http://stackoverflow.com/questions/30284921/creating-a-text-file-filled-with-random-integers-in-java
- * Modified by: Chenghao Li
- */
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
 public class CreateRandomFiles {
     /**
-     * Create NUM number of local files with size FileSize
-     * @param NUM
-     * @param FileSize
+     * Create number of local files with size FileSize for the purpose of creating share request to idx server and
+     * other testing purpose.
+     *
+     *  * Code Used: http://stackoverflow.com/questions/30284921/creating-a-text-file-filled-with-random-integers-in-java
+     *  * Modified by: Chenghao Li
+     *
+     * @param NUM number of local files to be created
+     * @param FileSize created file size
      * @throws IOException
      */
     public static void create(int NUM, int FileSize) throws IOException {

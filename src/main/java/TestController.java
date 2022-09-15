@@ -3,27 +3,33 @@ import comp90015.idxsrv.peer.PeerShareThread;
 
 import java.io.IOException;
 import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Scanner;
 
 public class TestController {
 
-    static int TEST_PEERS = 50;
-    static int FILE_SIZE = 523;
+    static int TEST_PEERS = 20;
+    static int FILE_SIZE = 500;
     static int num_success=0;
 
     /**
-     * Test Controller, Initialise test using this class.
-     * @param args
-     * @throws IOException
-     * @throws InterruptedException
+     * Test Controller, Initialise tests using this class.
+     *
+     * 1. Search requests test
+     * 2. Share requests test
      */
     public static void main(String[] args) throws IOException, InterruptedException {
+        //String skip = new Scanner(System.in).nextLine(); // wait for any user input before start testing to monitor resources.
+
+        // run tests
         Share_Test();
-        //Search_Test();
+        Search_Test();
+
+        // get memory needed to execute
         long mem = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
         System.out.println("Memory Usage: " + mem*0.000001 + " MB");
-
+        System.out.println("Number of Peers simulated: " + TEST_PEERS);
+        System.out.println("Local File size simulated (Bytes): " + FILE_SIZE);
     }
 
 
@@ -41,7 +47,7 @@ public class TestController {
         CreateRandomFiles.create(TEST_PEERS, FILE_SIZE);
 
         // get share thread running
-        ArrayList<PeerShareThread> threads = SendSpamShareRequests.getThreads(InetAddress.getByName("localhost"), 3200, TEST_PEERS);
+        ArrayList<PeerShareThread> threads = GenerateShareSpamThreads.getThreads(InetAddress.getByName("localhost"), 3200, TEST_PEERS);
         long start = System.nanoTime();
         for (PeerShareThread t: threads) {
             t.start();
@@ -64,7 +70,7 @@ public class TestController {
         CreateRandomFiles.create(TEST_PEERS, FILE_SIZE);
 
         // get share thread running
-        ArrayList<PeerSearchThread> threads = SendSpamSearchRequests.getThreads(InetAddress.getByName("localhost"), 3200, TEST_PEERS);
+        ArrayList<PeerSearchThread> threads = GenerateSearchSpamThreads.getThreads(InetAddress.getByName("localhost"), 3200, TEST_PEERS);
         long start = System.nanoTime();
         for (PeerSearchThread t: threads) {
             t.start();
